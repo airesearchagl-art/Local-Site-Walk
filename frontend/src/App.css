@@ -1,0 +1,102 @@
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+header h1 {
+  margin-bottom: 0.25rem;
+}
+
+.tagline {
+  color: #52606d;
+  margin-top: 0;
+}
+
+.health {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.875rem;
+}
+
+.health-checking {
+  background: #e4e7eb;
+  color: #3e4c59;
+}
+
+.health-ok {
+  background: #d1f7dd;
+  color: #14532d;
+}
+
+.health-error {
+  background: #fde2e2;
+  color: #7f1d1d;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+button {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 6px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #1d4ed8;
+}
+
+.notice {
+  background: #fef9c3;
+  color: #713f12;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+}
+
+.error {
+  color: #b91c1c;
+}
+
+.empty {
+  color: #52606d;
+}
+
+.project-list {
+  list-style: none;
+  padding: 0;
+}
+
+.project-list li {
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+  background: #fff;
+  border: 1px solid #e4e7eb;
+  border-radius: 8px;
+}
+
+.project-list .meta {
+  color: #52606d;
+  font-size: 0.85rem;
+}
+
+.project-list .note {
+  font-size: 0.85rem;
+}
+
+footer {
+  margin-top: 3rem;
+  font-size: 0.8rem;
+  color: #616e7c;
+}
