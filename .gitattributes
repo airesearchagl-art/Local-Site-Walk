@@ -1,5 +1,6 @@
 # BATはCRLFのまま格納する(GitHubから単体取得しても改行が崩れないように)
-*.bat -text
+# whitespace=cr-at-eol で行末CRをdiff --checkの誤検出対象から除外する
+*.bat -text whitespace=cr-at-eol
 # PowerShellはcheckout時にCRLF、シェルスクリプトはLF
 *.ps1 text eol=crlf
 *.sh text eol=lf

@@ -114,6 +114,22 @@ npm run dev
 - 原動画や生成物(フレーム・PLY・Splat等)をGitへ追加しないでください
 - データは既定で `%USERPROFILE%\LocalSiteWalkData` に保存されます(`LSW_DATA_DIR` で変更可)
 - 外部クラウドへの自動送信は行いません(BATにも外部ダウンロード・アップロード処理はありません)
+- `scripts\update_windows.bat` はremote originが本リポジトリのHTTPS URLと一致する場合のみ
+  更新します(SSH形式のURLは対象外。その場合は手動でfetch・fast-forwardしてください)
+
+## PR #1 merge前後の実施順序(運用メモ)
+
+> **警告**: PRをmergeする**前に**GitHubのデフォルトブランチを空の`main`へ変更しないでください。
+> その時点の`main`は空のベースcommitのみのため、通常の`git clone`でアプリファイルも
+> `scripts\setup_windows.bat`も取得できず、bootstrap BATによる導入も失敗します。
+> デフォルトブランチの変更は必ずmergeと反映確認の**後**に行ってください。
+
+1. feature branch(`claude/local-site-walk-scaffold-v3ab3x`)でWindows実機確認を行う
+2. PR #1 を `main` へmergeする
+3. `main` にアプリファイル一式(backend / frontend / scripts / BAT)が反映されたことを確認する
+4. GitHubのデフォルトブランチを `main` へ変更する
+5. bootstrap BATによる新規clone(初回導入)が問題なく動くことを再確認する
+6. 問題なければ `backup/scaffold-2da9522` ブランチを削除する
 
 ## ライセンス
 
