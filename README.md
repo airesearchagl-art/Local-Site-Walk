@@ -13,15 +13,54 @@
 
 ## 前提ソフトウェア
 
+- Git for Windows
 - Python 3.11 以上
 - Node.js 20 以上(npm 同梱)
-- Git
 
-## セットアップ(Windows)
+BATスクリプトはこれらの存在確認と案内のみを行い、**本体の自動インストールは行いません**。
+
+## 初回導入(Windows)
+
+> **重要**: clone前はリポジトリ内のBATを実行できません。初回導入には
+> 「方法A: `bootstrap_local_site_walk.bat` だけをGitHubまたは社内共有から先に取得する」か、
+> 「方法B: 最初の `git clone` だけ手動で実行する」のどちらかが必要です。
+
+### 方法A: bootstrap BAT
+
+1. `bootstrap_local_site_walk.bat` をGitHub(リポジトリルート)または社内共有から取得する
+2. ダブルクリックまたはコマンドプロンプトから実行する
+3. BATが以下を自動で行います
+   - Gitの存在確認(ない場合はGit for Windowsのインストールを案内して終了)
+   - `%USERPROFILE%\.claude\projects\Local Site Walk` へのclone
+     (既存リポジトリがある場合は上書き・pullをせず状態確認のみ)
+   - `scripts\setup_windows.bat` による自動セットアップと動作確認
+   - 確認後、`scripts\start_windows.bat` によるアプリ起動
+
+### 方法B: 最初だけ手動clone
+
+コマンドプロンプトで以下を実行します。
+
+```bat
+cd /d "%USERPROFILE%\.claude\projects"
+git clone https://github.com/airesearchagl-art/Local-Site-Walk.git "Local Site Walk"
+cd /d "%USERPROFILE%\.claude\projects\Local Site Walk"
+scripts\setup_windows.bat
+scripts\start_windows.bat
+```
+
+## 2回目以降(Windows)
+
+エクスプローラーから以下をダブルクリックで実行できます。
+
+| 操作 | 実行するファイル |
+| --- | --- |
+| 起動 | `scripts\start_windows.bat`(backend/frontendを別ウィンドウで起動しブラウザを開く) |
+| 更新 | `scripts\update_windows.bat`(未commit変更があれば中止。fast-forward可能な場合のみ更新) |
+| 問題調査 | `scripts\diagnose_windows.bat`(Git/Python/Node/ポート/データフォルダ等の状態表示) |
+
+## 手動セットアップ(開発者向け)
 
 ```powershell
-git clone https://github.com/airesearchagl-art/Local-Site-Walk.git
-cd Local-Site-Walk
 copy .env.example .env   # 必要に応じて編集(任意)
 ```
 
@@ -66,6 +105,15 @@ npm run dev
   - 環境変数 `LSW_DATA_DIR` で変更できます(`.env.example`参照)
 - 案件メタデータはデータディレクトリ内の `projects.json` から読み込みます
   (書式は `sample-data/projects.sample.json` を参照)
+
+## BAT運用の注意事項(Windows)
+
+- clone前はリポジトリ内のBATを実行できません。初回は bootstrap BAT の別途取得か手動cloneが必要です
+- BATは利便性向上用であり、Git・Python・Node.js本体を自動インストールしません
+- 未commit変更がある場合、`update_windows.bat` と bootstrap は自動更新・上書きを行わず中止します
+- 原動画や生成物(フレーム・PLY・Splat等)をGitへ追加しないでください
+- データは既定で `%USERPROFILE%\LocalSiteWalkData` に保存されます(`LSW_DATA_DIR` で変更可)
+- 外部クラウドへの自動送信は行いません(BATにも外部ダウンロード・アップロード処理はありません)
 
 ## ライセンス
 

@@ -1,0 +1,5 @@
+# BATはCRLFのまま格納する(GitHubから単体取得しても改行が崩れないように)
+*.bat -text
+# PowerShellはcheckout時にCRLF、シェルスクリプトはLF
+*.ps1 text eol=crlf
+*.sh text eol=lf
