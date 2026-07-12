@@ -37,9 +37,15 @@ echo ブラウザを開きます: http://localhost:5173/
 start "" "http://localhost:5173/"
 
 echo.
-echo 起動処理を実行しました。画面が表示されない場合は、
-echo 開いた2つのウィンドウのエラー表示を確認してください。
-echo 終了するときは「Local Site Walk - Backend」「Local Site Walk - Frontend」の
-echo 2つのウィンドウを閉じてください。
+echo 起動処理を実行しました。
+echo 画面が表示されない場合は、次のURLを開いてください。
+echo http://localhost:5173/
+echo.
+echo 開いたウィンドウにエラーが出ていないか確認してください。
+echo.
+echo アプリを終了するときは、次の2つのウィンドウを閉じてください。
+echo Local Site Walk - Backend
+echo Local Site Walk - Frontend
+echo.
 pause
 exit /b 0
