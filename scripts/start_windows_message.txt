@@ -1,0 +1,9 @@
+起動処理を実行しました。
+画面が表示されない場合は、次のURLを開いてください。
+http://localhost:5173/
+
+開いたウィンドウにエラーが出ていないか確認してください。
+
+アプリを終了するときは、次の2つのウィンドウを閉じてください。
+Local Site Walk - Backend
+Local Site Walk - Frontend

@@ -1,0 +1,44 @@
+# --- secrets / local config ---
+.env
+.env.local
+.env.*.local
+
+# --- python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- node / frontend ---
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+npm-debug.log*
+
+# --- large media / generated artifacts (never commit) ---
+*.mp4
+*.mov
+*.insv
+*.360
+*.ply
+*.splat
+*.sog
+*.zip
+*.db
+*.sqlite
+*.sqlite3
+data/
+generated/
+outputs/
+frames/
+thumbnails/
+
+# --- editors / OS ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
