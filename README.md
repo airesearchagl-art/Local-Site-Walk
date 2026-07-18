@@ -6,16 +6,36 @@
 
 ## 現在のMVP範囲
 
-- FastAPIバックエンド: `GET /api/health`、`GET /api/projects`(ローカルJSONから読込)
-- Reactフロントエンド: トップ画面(案件一覧・新規案件登録の入口・バックエンド接続状態表示)
-- 案件登録(360°動画アップロード)は**未実装**(入口のみ)
-- 360°変換処理・3D Gaussian Splatting は未実装(将来: FFmpeg / OpenCV / COLMAP / Nerfstudio / gsplat)
+- 案件(Project)の作成・一覧・更新・削除(SQLiteに保存)
+- 案件へのローカルフォルダ登録と、フォルダ内360°動画(mp4/mov)のスキャン
+- FFprobeによるメタデータ取得・FFmpegによるサムネイル生成
+  (FFmpeg/FFprobeがない環境でも動画登録自体は動作し、メタデータ・サムネイルのみ欠落)
+- サムネイルカード付きの動画一覧
+- ブラウザ上の360°(equirectangular)動画プレイヤー(ドラッグで見回し・ホイールでズーム)
+- 3D Gaussian Splatting・COLMAP・Nerfstudio・AI解析・クラウド同期は**未実装**
+
+### API一覧
+
+| メソッド | パス | 内容 |
+| --- | --- | --- |
+| GET | `/api/health` | ヘルスチェック(FFmpeg/FFprobe有無を含む) |
+| GET | `/api/projects` | 案件一覧 |
+| POST | `/api/projects` | 案件作成(name / folder_path / note) |
+| GET | `/api/projects/{id}` | 案件取得 |
+| PUT | `/api/projects/{id}` | 案件更新 |
+| DELETE | `/api/projects/{id}` | 案件削除(動画レコード・サムネイルも削除) |
+| POST | `/api/projects/{id}/scan` | 登録フォルダをスキャンし動画を登録・更新 |
+| GET | `/api/projects/{id}/videos` | 案件の動画一覧 |
+| GET | `/api/videos/{id}` | 動画詳細 |
+| GET | `/api/videos/{id}/thumbnail` | サムネイルJPEG |
+| GET | `/api/videos/{id}/stream` | 動画ファイル配信(ローカル再生用) |
 
 ## 前提ソフトウェア
 
 - Git for Windows
 - Python 3.11 以上
 - Node.js 20 以上(npm 同梱)
+- FFmpeg(任意・推奨。動画メタデータ取得とサムネイル生成に使用。なくても起動・動画登録は可能)
 
 BATスクリプトはこれらの存在確認と案内のみを行い、**本体の自動インストールは行いません**。
 
@@ -103,8 +123,9 @@ npm run dev
 - 実データはリポジトリ外のデータディレクトリに保存します
   - 既定: `<ホームディレクトリ>/LocalSiteWalkData`(例: `C:\Users\<username>\LocalSiteWalkData`)
   - 環境変数 `LSW_DATA_DIR` で変更できます(`.env.example`参照)
-- 案件メタデータはデータディレクトリ内の `projects.json` から読み込みます
-  (書式は `sample-data/projects.sample.json` を参照)
+- 案件・動画メタデータはデータディレクトリ内のSQLite(`local_site_walk.db`)に保存します
+- サムネイルはデータディレクトリ内 `thumbnails/` に生成します(いずれもGit管理外)
+- 動画ファイル自体は登録フォルダから移動・コピーせず、その場所のまま参照します
 
 ## BAT運用の注意事項(Windows)
 

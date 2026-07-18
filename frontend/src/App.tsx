@@ -1,27 +1,31 @@
 import { useEffect, useState } from "react";
-import { fetchHealth, fetchProjects, type Project } from "./api";
+import { fetchHealth } from "./api";
+import ProjectDetailView from "./views/ProjectDetailView";
+import ProjectListView from "./views/ProjectListView";
+import PlayerView from "./views/PlayerView";
 import "./App.css";
 
 type BackendState = "checking" | "ok" | "error";
 
+type Route =
+  | { view: "projects" }
+  | { view: "project"; projectId: number }
+  | { view: "player"; projectId: number; videoId: number };
+
 function App() {
   const [backendState, setBackendState] = useState<BackendState>("checking");
-  const [backendVersion, setBackendVersion] = useState<string>("");
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [projectsError, setProjectsError] = useState<string>("");
-  const [showRegisterNote, setShowRegisterNote] = useState(false);
+  const [backendVersion, setBackendVersion] = useState("");
+  const [ffmpegOk, setFfmpegOk] = useState(true);
+  const [route, setRoute] = useState<Route>({ view: "projects" });
 
   useEffect(() => {
     fetchHealth()
       .then((h) => {
         setBackendState(h.status === "ok" ? "ok" : "error");
         setBackendVersion(h.version);
+        setFfmpegOk(h.ffmpeg_available && h.ffprobe_available);
       })
       .catch(() => setBackendState("error"));
-
-    fetchProjects()
-      .then(setProjects)
-      .catch(() => setProjectsError("案件一覧を取得できませんでした"));
   }, []);
 
   return (
@@ -36,39 +40,36 @@ function App() {
           {backendState === "ok" && `バックエンド接続OK (v${backendVersion})`}
           {backendState === "error" && "バックエンドに接続できません"}
         </div>
-      </header>
-
-      <section>
-        <div className="section-head">
-          <h2>案件一覧</h2>
-          <button onClick={() => setShowRegisterNote(true)}>
-            新規案件を登録
-          </button>
-        </div>
-        {showRegisterNote && (
+        {backendState === "ok" && !ffmpegOk && (
           <p className="notice">
-            案件登録(360°動画のアップロード)は未実装です。今後のバージョンで対応予定です。
+            FFmpeg / FFprobe が見つかりません。動画の登録はできますが、
+            メタデータ取得とサムネイル生成は行われません。
           </p>
         )}
-        {projectsError && <p className="error">{projectsError}</p>}
-        {!projectsError && projects.length === 0 && (
-          <p className="empty">登録済みの案件はまだありません。</p>
-        )}
-        {projects.length > 0 && (
-          <ul className="project-list">
-            {projects.map((p) => (
-              <li key={p.id}>
-                <strong>{p.name}</strong>
-                <span className="meta">
-                  {p.status}
-                  {p.recorded_at ? ` / 撮影日: ${p.recorded_at}` : ""}
-                </span>
-                {p.note && <span className="note">{p.note}</span>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      </header>
+
+      {route.view === "projects" && (
+        <ProjectListView
+          onOpenProject={(projectId) => setRoute({ view: "project", projectId })}
+        />
+      )}
+      {route.view === "project" && (
+        <ProjectDetailView
+          projectId={route.projectId}
+          onBack={() => setRoute({ view: "projects" })}
+          onOpenVideo={(videoId) =>
+            setRoute({ view: "player", projectId: route.projectId, videoId })
+          }
+        />
+      )}
+      {route.view === "player" && (
+        <PlayerView
+          videoId={route.videoId}
+          onBack={() =>
+            setRoute({ view: "project", projectId: route.projectId })
+          }
+        />
+      )}
 
       <footer>
         <p>
