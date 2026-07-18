@@ -56,7 +56,29 @@ scripts\start_windows.bat
 | --- | --- |
 | 起動 | `scripts\start_windows.bat`(backend/frontendを別ウィンドウで起動しブラウザを開く) |
 | 更新 | `scripts\update_windows.bat`(未commit変更があれば中止。fast-forward可能な場合のみ更新) |
+| PR確認 | `scripts\review_pr_windows.bat <PR番号>`(下記参照) |
 | 問題調査 | `scripts\diagnose_windows.bat`(Git/Python/Node/ポート/データフォルダ等の状態表示) |
+
+## PRをWindows実機で確認する
+
+コマンドプロンプトでPR番号を指定して1コマンド実行します。
+
+```bat
+scripts\review_pr_windows.bat 2
+```
+
+自動で以下を行います。
+
+1. remote・未commit変更の安全確認(変更があれば中止)
+2. `pull/<PR番号>/head` の取得(PRのブランチ名を知らなくてもよい)
+3. LOCALとPRのcommitを表示
+4. 確認専用ブランチ `pr/<PR番号>` へ切替(PR内容と同期。独自commitがあれば中止)
+5. 確認プロンプト(PRのコードを実行してよいかY/Nで確認)
+6. `setup_windows.bat` による依存関係導入とcheck実行
+7. `start_windows.bat` による起動
+
+確認を終えたら `git switch main` などで元のブランチへ戻ってください。
+`pr/<PR番号>` は確認専用のため、そこへ直接commitしないでください。
 
 ## 手動セットアップ(開発者向け)
 
