@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 setlocal EnableExtensions
 chcp 65001 >nul
 title Local Site Walk - 起動
@@ -37,15 +37,7 @@ echo ブラウザを開きます: http://localhost:5173/
 start "" "http://localhost:5173/"
 
 echo.
-echo 起動処理を実行しました。
-echo 画面が表示されない場合は、次のURLを開いてください。
-echo http://localhost:5173/
-echo.
-echo 開いたウィンドウにエラーが出ていないか確認してください。
-echo.
-echo アプリを終了するときは、次の2つのウィンドウを閉じてください。
-echo Local Site Walk - Backend
-echo Local Site Walk - Frontend
+type "%~dp0start_windows_message.txt"
 echo.
 pause
 exit /b 0
