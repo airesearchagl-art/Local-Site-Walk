@@ -1,110 +1,118 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
+rem chcp 65001 (UTF-8) is needed so the "type" command below renders
+rem the UTF-8 Japanese message .txt files correctly. This BAT's own
+rem body is ASCII-only, so chcp does not affect how cmd.exe parses it.
 chcp 65001 >nul
-title Local Site Walk - 初回導入
+title Local Site Walk - Bootstrap
 
+rem Expected repository (owner/repo, compared after normalizing any
+rem of: https://.../repo.git, https://.../repo, git@host:repo.git,
+rem ssh://git@host/repo.git)
+set "EXPECTED_REPO=airesearchagl-art/Local-Site-Walk"
 set "REPO_URL=https://github.com/airesearchagl-art/Local-Site-Walk.git"
 set "PARENT_DIR=%USERPROFILE%\.claude\projects"
 set "TARGET_DIR=%PARENT_DIR%\Local Site Walk"
 
 echo ==============================================
-echo  Local Site Walk 初回導入（bootstrap）
+echo  Local Site Walk - Bootstrap
 echo ==============================================
-echo clone先: "%TARGET_DIR%"
+echo Clone destination: "%TARGET_DIR%"
 echo.
 
-rem --- 1. Git の存在確認 ---
+rem --- 1. Check Git is installed ---
 git --version >nul 2>&1
 if errorlevel 1 (
-    echo [エラー] Git が見つかりません。
-    echo Git for Windows を手動でインストールしてから再実行してください。
-    echo このスクリプトはインストーラーを自動取得しません。
+    type "%~dp0bootstrap_git_missing_message.txt"
     goto :fail
 )
-echo [OK] Git を確認しました。
+echo [OK] Git found.
 
-rem --- 2. 親フォルダの作成 ---
+rem --- 2. Create parent folder ---
 if not exist "%PARENT_DIR%" (
-    echo フォルダを作成します: "%PARENT_DIR%"
+    echo Creating folder: "%PARENT_DIR%"
     mkdir "%PARENT_DIR%"
     if errorlevel 1 (
-        echo [エラー] フォルダを作成できませんでした。
+        echo [ERROR] Could not create the folder.
         goto :fail
     )
 )
 
-rem --- 3. clone 先の状態確認 ---
+rem --- 3. Check clone destination state ---
 if exist "%TARGET_DIR%\.git" goto :existing_repo
 if exist "%TARGET_DIR%" (
-    echo [エラー] clone先フォルダは存在しますが、Gitリポジトリではありません。
-    echo 中身を確認して手動で対応してください。このスクリプトは削除を行いません。
+    type "%~dp0bootstrap_existing_not_git_message.txt"
     goto :fail
 )
 
-echo リポジトリを clone します...
+echo Cloning the repository...
 git clone "%REPO_URL%" "%TARGET_DIR%"
 if errorlevel 1 (
-    echo [エラー] clone に失敗しました。ネットワークとリポジトリへのアクセス権を確認してください。
+    echo [ERROR] Clone failed. Check your network and repository access.
     goto :fail
 )
-echo [OK] clone が完了しました。
+echo [OK] Clone complete.
 goto :run_setup
 
 :existing_repo
-echo 既存のリポジトリが見つかりました。clone はスキップします。
+echo Existing repository found. Skipping clone.
 
-rem remote URL の確認（末尾 .git の有無は無視して比較）
+rem --- Validate remote origin (normalize owner/repo, accept https/ssh) ---
 set "CURRENT_URL="
 for /f "delims=" %%u in ('git -C "%TARGET_DIR%" remote get-url origin 2^>nul') do set "CURRENT_URL=%%u"
 if not defined CURRENT_URL (
-    echo [エラー] remote origin を取得できませんでした。中止します。
+    echo [ERROR] Could not read the "origin" remote. Aborting.
     goto :fail
 )
-set "URL_A=!CURRENT_URL!"
-if /i "!URL_A:~-4!"==".git" set "URL_A=!URL_A:~0,-4!"
-set "URL_B=%REPO_URL%"
-if /i "!URL_B:~-4!"==".git" set "URL_B=!URL_B:~0,-4!"
-if /i not "!URL_A!"=="!URL_B!" (
-    echo [エラー] remote が想定リポジトリと異なるため中止します。
-    echo   現在: !CURRENT_URL!
-    echo   想定: %REPO_URL%
+set "URL_NORM=!CURRENT_URL!"
+if /i "!URL_NORM:~-4!"==".git" set "URL_NORM=!URL_NORM:~0,-4!"
+set "URL_NORM=!URL_NORM:ssh://git@github.com/=!"
+set "URL_NORM=!URL_NORM:git@github.com:=!"
+set "URL_NORM=!URL_NORM:https://github.com/=!"
+set "URL_NORM=!URL_NORM:http://github.com/=!"
+if /i not "!URL_NORM!"=="!EXPECTED_REPO!" (
+    type "%~dp0bootstrap_origin_mismatch_message.txt"
+    echo Current : !CURRENT_URL!
+    echo Expected: !EXPECTED_REPO! on github.com
     goto :fail
 )
-echo [OK] remote は想定リポジトリと一致しています。
+echo [OK] origin matches the expected repository.
 
-rem 未commit変更の確認（上書き防止）
+rem --- Check for uncommitted changes (prevent overwrite) ---
 set "DIRTY="
 for /f "delims=" %%s in ('git -C "%TARGET_DIR%" status --porcelain') do set "DIRTY=1"
 if defined DIRTY (
-    echo [エラー] 未commitの変更があるため中止します。pull や上書きは行いません。
-    echo 変更内容を確認してから、更新には scripts\update_windows.bat を使用してください。
+    type "%~dp0bootstrap_dirty_message.txt"
     goto :fail
 )
-echo [OK] 未commit変更はありません。pull は自動実行しません。
+echo [OK] No uncommitted changes. Not pulling automatically.
 
 :run_setup
 echo.
-echo セットアップを開始します...
+echo Starting setup...
 call "%TARGET_DIR%\scripts\setup_windows.bat" nopause
 if errorlevel 1 (
-    echo [エラー] セットアップに失敗しました。上のメッセージを確認してください。
+    echo [ERROR] Setup failed. Check the messages above.
     goto :fail
 )
 
 echo.
-set "START_NOW="
-set /p "START_NOW=アプリを起動しますか? [Y/N]: "
-if /i "!START_NOW!"=="Y" call "%TARGET_DIR%\scripts\start_windows.bat"
+choice /c YN /n /m "Start the app now? [Y/N]: "
+if not errorlevel 2 (
+    call "%TARGET_DIR%\scripts\start_windows.bat"
+    if errorlevel 1 (
+        echo [ERROR] start_windows.bat failed. Check the messages above.
+        goto :fail
+    )
+)
 
 echo.
-echo 初回導入が完了しました。
-echo 次回以降の起動: scripts\start_windows.bat
-echo 更新: scripts\update_windows.bat  ／  診断: scripts\diagnose_windows.bat
+type "%~dp0bootstrap_done_message.txt"
 pause
 exit /b 0
 
 :fail
 echo.
-echo 処理を中止しました。上のメッセージを確認して対応してください。
+echo Aborted. See the messages above for details.
 pause
 exit /b 1

@@ -1,0 +1,5 @@
+初回導入が完了しました。
+
+次回以降の起動: scripts\start_windows.bat
+更新: scripts\update_windows.bat
+診断: scripts\diagnose_windows.bat
