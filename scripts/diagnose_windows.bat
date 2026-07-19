@@ -3,7 +3,7 @@ setlocal EnableExtensions
 chcp 65001 >nul
 title Local Site Walk - 環境診断
 
-rem リポジトリルート = このBATの1つ上のフォルダ
+rem Repo root = one folder above this BAT
 for %%i in ("%~dp0..") do set "ROOT=%%~fi"
 
 echo ==============================================

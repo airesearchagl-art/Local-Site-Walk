@@ -3,10 +3,10 @@ setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul
 title Local Site Walk - PR確認
 
-rem このスクリプトが対象とする想定リポジトリ(HTTPS)
+rem Expected repository this script targets (HTTPS)
 set "REPO_URL=https://github.com/airesearchagl-art/Local-Site-Walk.git"
 
-rem リポジトリルート = このBATの1つ上のフォルダ
+rem Repo root = one folder above this BAT
 for %%i in ("%~dp0..") do set "ROOT=%%~fi"
 cd /d "%ROOT%"
 
@@ -14,7 +14,7 @@ echo ==============================================
 echo  Local Site Walk PR確認
 echo ==============================================
 
-rem --- 引数の確認 ---
+rem --- Check the argument ---
 set "PR_NUM=%~1"
 if not defined PR_NUM (
     type "%~dp0review_pr_usage_message.txt"
@@ -27,14 +27,14 @@ if errorlevel 1 (
 )
 set "PR_BRANCH=pr/%PR_NUM%"
 
-rem --- Git リポジトリであることを確認 ---
+rem --- Check this is a Git repository ---
 git rev-parse --is-inside-work-tree >nul 2>&1
 if errorlevel 1 (
     echo [エラー] Gitリポジトリではありません: "%ROOT%"
     goto :fail
 )
 
-rem --- remote origin の検証(想定リポジトリ以外では実行しない)---
+rem --- Validate remote origin (do not run unless it matches) ---
 set "CURRENT_URL="
 for /f "delims=" %%u in ('git remote get-url origin 2^>nul') do set "CURRENT_URL=%%u"
 if not defined CURRENT_URL (
@@ -52,7 +52,7 @@ if /i not "!URL_A!"=="!URL_B!" (
     goto :fail
 )
 
-rem --- 未commit変更の保護 ---
+rem --- Protect uncommitted changes ---
 set "DIRTY="
 for /f "delims=" %%s in ('git status --porcelain') do set "DIRTY=1"
 if defined DIRTY (
@@ -60,7 +60,7 @@ if defined DIRTY (
     goto :fail
 )
 
-rem --- PR内容の取得(ブランチ名を知らなくてもPR番号だけで取得できる)---
+rem --- Fetch the PR (no need to know the branch name, only the PR number) ---
 echo PR #%PR_NUM% を取得します...
 git fetch origin "pull/%PR_NUM%/head"
 if errorlevel 1 (
@@ -76,7 +76,7 @@ echo --- PR #%PR_NUM% のREMOTE ---
 git log --oneline -1 FETCH_HEAD
 echo.
 
-rem --- レビュー用ブランチ pr/N 上の独自commitを保護 ---
+rem --- Protect commits on the review branch pr/N that are not in the PR ---
 git rev-parse --verify --quiet "%PR_BRANCH%" >nul 2>&1
 if not errorlevel 1 (
     set "LOCAL_ONLY="
@@ -88,7 +88,7 @@ if not errorlevel 1 (
     )
 )
 
-rem --- レビュー用ブランチへ切替。pr/N はPR内容を映す確認専用ブランチ ---
+rem --- Switch to the review branch. pr/N mirrors the PR for review only ---
 git switch -C "%PR_BRANCH%" FETCH_HEAD
 if errorlevel 1 (
     echo [エラー] ブランチの切替に失敗しました。
@@ -97,7 +97,7 @@ if errorlevel 1 (
 echo [OK] %PR_BRANCH% に切り替えました。
 git log --oneline -1 HEAD
 
-rem --- セットアップと起動。PRのコードを実行するため事前に確認を取る ---
+rem --- Setup and start. Confirm before running the fetched PR code ---
 echo.
 type "%~dp0review_pr_confirm_message.txt"
 set "GO="

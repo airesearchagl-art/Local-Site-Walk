@@ -3,12 +3,12 @@ setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul
 title Local Site Walk - 更新
 
-rem このスクリプトが更新対象とする想定リポジトリ(HTTPS)
+rem Expected repository this script updates (HTTPS)
 set "REPO_URL=https://github.com/airesearchagl-art/Local-Site-Walk.git"
-rem 更新対象は常にmain(現在のブランチのupstreamではない)
+rem Always targets main (not the current branch's upstream)
 set "MAIN_BRANCH=main"
 
-rem リポジトリルート = このBATの1つ上のフォルダ
+rem Repo root = one folder above this BAT
 for %%i in ("%~dp0..") do set "ROOT=%%~fi"
 cd /d "%ROOT%"
 
@@ -16,7 +16,7 @@ echo ==============================================
 echo  Local Site Walk 更新
 echo ==============================================
 
-rem --- Git リポジトリであることを確認 ---
+rem --- Check this is a Git repository ---
 git rev-parse --is-inside-work-tree >nul 2>&1
 if errorlevel 1 (
     echo [エラー] Gitリポジトリではありません: "%ROOT%"
@@ -32,14 +32,14 @@ for /f "delims=" %%b in ('git branch --show-current') do set "CUR_BRANCH=%%b"
 echo %CUR_BRANCH%
 echo.
 
-rem --- remote origin の検証(想定リポジトリ以外は更新しない)---
+rem --- Validate remote origin (do not update unless it matches) ---
 set "CURRENT_URL="
 for /f "delims=" %%u in ('git remote get-url origin 2^>nul') do set "CURRENT_URL=%%u"
 if not defined CURRENT_URL (
     echo [エラー] remote origin が設定されていません。中止します。
     goto :fail
 )
-rem 末尾 .git の有無を正規化して比較(bootstrap_local_site_walk.bat と同じ判定基準)
+rem Normalize trailing .git before comparing (same rule as bootstrap_local_site_walk.bat)
 set "URL_A=!CURRENT_URL!"
 if /i "!URL_A:~-4!"==".git" set "URL_A=!URL_A:~0,-4!"
 set "URL_B=%REPO_URL%"
@@ -54,7 +54,7 @@ if /i not "!URL_A!"=="!URL_B!" (
 echo [OK] remote origin は想定リポジトリと一致しています。
 echo.
 
-rem --- 未commit変更の保護 ---
+rem --- Protect uncommitted changes ---
 set "DIRTY="
 for /f "delims=" %%s in ('git status --porcelain') do set "DIRTY=1"
 if defined DIRTY (
@@ -69,7 +69,7 @@ if errorlevel 1 (
     goto :fail
 )
 
-rem --- origin/main の存在確認 ---
+rem --- Check origin/main exists ---
 git rev-parse --verify --quiet "origin/%MAIN_BRANCH%" >nul 2>&1
 if errorlevel 1 (
     echo [エラー] origin/%MAIN_BRANCH% が見つかりません。中止します。
@@ -78,7 +78,7 @@ if errorlevel 1 (
 
 if /i "%CUR_BRANCH%"=="%MAIN_BRANCH%" goto :update_main
 
-rem --- main以外のブランチにいる場合。状況を表示し、切替を確認する ---
+rem --- On a branch other than main: show status and confirm before switching ---
 echo.
 type "%~dp0update_branch_switch_message.txt"
 echo 現在のブランチ:
@@ -105,7 +105,7 @@ if errorlevel 1 (
 )
 
 :update_main
-rem --- fast-forwardできる場合だけ更新(merge/rebase/resetは行わない)---
+rem --- Update only if fast-forward is possible (no merge/rebase/reset) ---
 git merge --ff-only "origin/%MAIN_BRANCH%"
 if errorlevel 1 (
     type "%~dp0update_diverged_message.txt"

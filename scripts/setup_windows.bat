@@ -3,10 +3,10 @@ setlocal EnableExtensions
 chcp 65001 >nul
 title Local Site Walk - セットアップ
 
-rem 引数 nopause 付きで呼ばれた場合は最後に pause しない（bootstrap等からの呼び出し用）
+rem Skip the final pause when called with the "nopause" argument (used by bootstrap etc.)
 set "NOPAUSE=%~1"
 
-rem リポジトリルート = このBATの1つ上のフォルダ
+rem Repo root = one folder above this BAT
 for %%i in ("%~dp0..") do set "ROOT=%%~fi"
 
 echo ==============================================
@@ -15,7 +15,7 @@ echo ==============================================
 echo 対象: "%ROOT%"
 echo.
 
-rem --- Python の検出（py -3 を優先し、なければ python）---
+rem --- Detect Python (prefer "py -3", fall back to "python") ---
 set "PY_CMD="
 py -3 --version >nul 2>&1
 if not errorlevel 1 set "PY_CMD=py -3"
@@ -29,7 +29,7 @@ if not defined PY_CMD (
 )
 echo [OK] Python: %PY_CMD%
 
-rem --- Node.js / npm の確認 ---
+rem --- Check Node.js / npm ---
 node --version >nul 2>&1
 if errorlevel 1 (
     echo [エラー] Node.js が見つかりません。Node.js 20 以上をインストールしてください。
@@ -42,7 +42,7 @@ if errorlevel 1 (
 )
 echo [OK] Node.js / npm を確認しました。
 
-rem --- backend 仮想環境（既存の .venv は再作成しない）---
+rem --- Backend virtual environment (do not recreate an existing .venv) ---
 set "VENV_PY=%ROOT%\backend\.venv\Scripts\python.exe"
 if not exist "%VENV_PY%" (
     echo backend\.venv を作成します...
@@ -59,7 +59,7 @@ if errorlevel 1 (
     goto :fail
 )
 
-rem --- frontend 依存関係（lockfile があれば npm ci で再現性を確保）---
+rem --- Frontend dependencies (use npm ci for reproducibility when a lockfile exists) ---
 cd /d "%ROOT%\frontend"
 if exist "package-lock.json" (
     echo npm ci を実行します...
@@ -73,7 +73,7 @@ if errorlevel 1 (
     goto :fail
 )
 
-rem --- データ保存先（リポジトリ外・既定値）---
+rem --- Data directory (outside the repo, default location) ---
 if not exist "%USERPROFILE%\LocalSiteWalkData" (
     echo データフォルダを作成します: "%USERPROFILE%\LocalSiteWalkData"
     mkdir "%USERPROFILE%\LocalSiteWalkData"
@@ -83,7 +83,7 @@ if not exist "%USERPROFILE%\LocalSiteWalkData" (
     )
 )
 
-rem --- .env（なければ .env.example から作成。機密情報は含まれません）---
+rem --- .env (create from .env.example if missing; contains no secrets) ---
 if not exist "%ROOT%\.env" (
     if exist "%ROOT%\.env.example" (
         copy "%ROOT%\.env.example" "%ROOT%\.env" >nul
@@ -93,7 +93,7 @@ if not exist "%ROOT%\.env" (
     )
 )
 
-rem --- backend の確認（lint / test / 構文）---
+rem --- Backend checks (lint / test / syntax) ---
 cd /d "%ROOT%\backend"
 echo.
 echo ruff check を実行します...
@@ -115,7 +115,7 @@ if errorlevel 1 (
     goto :fail
 )
 
-rem --- frontend の確認（lint / 型 / build）---
+rem --- Frontend checks (lint / typecheck / build) ---
 cd /d "%ROOT%\frontend"
 echo.
 echo npm run lint を実行します...

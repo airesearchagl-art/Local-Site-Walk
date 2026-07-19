@@ -13,7 +13,7 @@ echo ==============================================
 echo clone先: "%TARGET_DIR%"
 echo.
 
-rem --- 1. Git の存在確認 ---
+rem --- 1. Check Git is installed ---
 git --version >nul 2>&1
 if errorlevel 1 (
     echo [エラー] Git が見つかりません。
@@ -23,7 +23,7 @@ if errorlevel 1 (
 )
 echo [OK] Git を確認しました。
 
-rem --- 2. 親フォルダの作成 ---
+rem --- 2. Create parent folder ---
 if not exist "%PARENT_DIR%" (
     echo フォルダを作成します: "%PARENT_DIR%"
     mkdir "%PARENT_DIR%"
@@ -33,7 +33,7 @@ if not exist "%PARENT_DIR%" (
     )
 )
 
-rem --- 3. clone 先の状態確認 ---
+rem --- 3. Check clone destination state ---
 if exist "%TARGET_DIR%\.git" goto :existing_repo
 if exist "%TARGET_DIR%" (
     echo [エラー] clone先フォルダは存在しますが、Gitリポジトリではありません。
@@ -53,7 +53,7 @@ goto :run_setup
 :existing_repo
 echo 既存のリポジトリが見つかりました。clone はスキップします。
 
-rem remote URL の確認（末尾 .git の有無は無視して比較）
+rem Check remote URL (compare ignoring trailing .git)
 set "CURRENT_URL="
 for /f "delims=" %%u in ('git -C "%TARGET_DIR%" remote get-url origin 2^>nul') do set "CURRENT_URL=%%u"
 if not defined CURRENT_URL (
@@ -72,7 +72,7 @@ if /i not "!URL_A!"=="!URL_B!" (
 )
 echo [OK] remote は想定リポジトリと一致しています。
 
-rem 未commit変更の確認（上書き防止）
+rem Check for uncommitted changes (prevent overwrite)
 set "DIRTY="
 for /f "delims=" %%s in ('git -C "%TARGET_DIR%" status --porcelain') do set "DIRTY=1"
 if defined DIRTY (

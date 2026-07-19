@@ -3,14 +3,14 @@ setlocal EnableExtensions
 chcp 65001 >nul
 title Local Site Walk - 起動
 
-rem リポジトリルート = このBATの1つ上のフォルダ
+rem Repo root = one folder above this BAT
 for %%i in ("%~dp0..") do set "ROOT=%%~fi"
 
 echo ==============================================
 echo  Local Site Walk 起動
 echo ==============================================
 
-rem --- セットアップ済みか確認 ---
+rem --- Check setup has been completed ---
 if not exist "%ROOT%\backend\.venv\Scripts\python.exe" (
     echo [エラー] backend\.venv が見つかりません。
     echo 先に scripts\setup_windows.bat を実行してください。
