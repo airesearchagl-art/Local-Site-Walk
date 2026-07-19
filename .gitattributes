@@ -4,5 +4,5 @@
 # PowerShellはcheckout時にCRLF、シェルスクリプトはLF
 *.ps1 text eol=crlf
 *.sh text eol=lf
-# start_windows.bat が type で読み込むメッセージ資源。BATと同様にCRLF固定・正規化無効化
-scripts/start_windows_message.txt -text whitespace=cr-at-eol
+# *_windows.bat が type で読み込むメッセージ資源。BATと同様にCRLF固定・正規化無効化
+scripts/*_message.txt -text whitespace=cr-at-eol

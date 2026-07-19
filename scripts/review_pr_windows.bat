@@ -17,8 +17,7 @@ echo ==============================================
 rem --- 引数の確認 ---
 set "PR_NUM=%~1"
 if not defined PR_NUM (
-    echo 使い方: scripts\review_pr_windows.bat PR番号
-    echo 例:     scripts\review_pr_windows.bat 2
+    type "%~dp0review_pr_usage_message.txt"
     goto :fail
 )
 echo %PR_NUM%| findstr /r "^[0-9][0-9]*$" >nul
@@ -57,8 +56,7 @@ rem --- 未commit変更の保護 ---
 set "DIRTY="
 for /f "delims=" %%s in ('git status --porcelain') do set "DIRTY=1"
 if defined DIRTY (
-    echo [中止] 未commitの変更があります。上書きを避けるため中止します。
-    echo 変更内容を確認し、commit または退避してから再実行してください。
+    type "%~dp0review_pr_dirty_message.txt"
     goto :fail
 )
 
@@ -101,8 +99,7 @@ git log --oneline -1 HEAD
 
 rem --- セットアップと起動。PRのコードを実行するため事前に確認を取る ---
 echo.
-echo この後、取り込んだPRのコードで依存関係の導入とcheckを実行します。
-echo 内容を信頼できるPRであることを確認してから進めてください。
+type "%~dp0review_pr_confirm_message.txt"
 set "GO="
 set /p "GO=セットアップと起動を続けますか? [Y/N]: "
 if /i not "!GO!"=="Y" (
@@ -120,8 +117,7 @@ echo アプリを起動します...
 call "%ROOT%\scripts\start_windows.bat"
 
 echo.
-echo PR確認を終えたら、元のブランチへ戻ってください。
-echo 例: git switch main
+type "%~dp0review_pr_done_message.txt"
 pause
 exit /b 0
 
