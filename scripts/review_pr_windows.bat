@@ -6,14 +6,23 @@ rem ASCII-only, so chcp does not affect how cmd.exe parses it.
 chcp 65001 >nul
 title Local Site Walk - PR Review
 
+rem Repo root = one folder above this BAT. Computed first so it is
+rem available in both the normal path and the __continue__ re-exec path.
+for %%i in ("%~dp0..") do set "ROOT=%%~fi"
+cd /d "%ROOT%"
+
+rem --- Re-entry after "git switch" below. See the comment at the
+rem     "git switch -C" call for why this re-exec exists. ---
+if /i "%~1"=="__continue__" (
+    set "PR_NUM=%~2"
+    set "PR_BRANCH=pr/%PR_NUM%"
+    goto :post_switch
+)
+
 rem Expected repository (owner/repo, compared after normalizing any
 rem of: https://.../repo.git, https://.../repo, git@host:repo.git,
 rem ssh://git@host/repo.git)
 set "EXPECTED_REPO=airesearchagl-art/Local-Site-Walk"
-
-rem Repo root = one folder above this BAT
-for %%i in ("%~dp0..") do set "ROOT=%%~fi"
-cd /d "%ROOT%"
 
 echo ==============================================
 echo  Local Site Walk - PR Review
@@ -95,21 +104,35 @@ if not errorlevel 1 (
     )
 )
 
-rem --- Switch to the review branch. pr/N mirrors the PR for review only ---
+rem --- Switch to the review branch. pr/N mirrors the PR for review only.
+rem
+rem   IMPORTANT: this BAT file lives inside the repository, so "git switch"
+rem   below can overwrite THIS VERY FILE on disk with whatever version the
+rem   PR contains. cmd.exe reads .bat files incrementally from disk rather
+rem   than loading the whole script into memory first, so continuing to
+rem   execute inline past this point would read stale/misaligned bytes of
+rem   the NEW file at the OLD file's read position - producing garbage
+rem   commands (this is what previously caused a bare "id" to be run and
+rem   reported as "not recognized"). To avoid that, this script exits and
+rem   re-launches itself in a brand-new cmd.exe process, which opens and
+rem   reads whatever is now actually on disk from a clean, fresh position.
 git switch -C "%PR_BRANCH%" FETCH_HEAD
 if errorlevel 1 (
     echo [ERROR] Could not switch branch.
     goto :fail
 )
+cmd /c "%~f0" __continue__ "%PR_NUM%"
+exit /b %errorlevel%
+
+:post_switch
 echo [OK] Switched to %PR_BRANCH%.
 git log --oneline -1 HEAD
 
 rem --- Setup and start. Confirm before running the fetched PR code ---
 echo.
 type "%~dp0review_pr_confirm_message.txt"
-set "GO="
-set /p "GO=Continue with setup and start? [Y/N]: "
-if /i not "!GO!"=="Y" (
+choice /c YN /n /m "Continue with setup and start? [Y/N]: "
+if errorlevel 2 (
     echo Not running setup. Branch remains %PR_BRANCH%.
     goto :fail
 )

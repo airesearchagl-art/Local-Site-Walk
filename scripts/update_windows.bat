@@ -13,9 +13,16 @@ set "EXPECTED_REPO=airesearchagl-art/Local-Site-Walk"
 rem Always targets main (not the current branch's upstream)
 set "MAIN_BRANCH=main"
 
-rem Repo root = one folder above this BAT
+rem Repo root = one folder above this BAT. These are set unconditionally,
+rem before the re-entry check below, so they are available in both the
+rem normal path and any __continue_*__ re-exec path.
 for %%i in ("%~dp0..") do set "ROOT=%%~fi"
 cd /d "%ROOT%"
+
+rem --- Re-entry after "git switch"/"git merge" below. See the comments
+rem     at those calls for why this re-exec exists. ---
+if /i "%~1"=="__continue_after_switch__" goto :do_merge
+if /i "%~1"=="__continue_after_merge__" goto :post_update
 
 echo ==============================================
 echo  Local Site Walk - Update
@@ -81,7 +88,9 @@ if errorlevel 1 (
     goto :fail
 )
 
-rem --- Ensure a local main branch exists, tracking origin/main ---
+rem --- Ensure a local main branch exists, tracking origin/main.
+rem     "git branch" (no checkout) never touches the working tree, so it
+rem     cannot overwrite this running script; no re-exec needed here. ---
 git rev-parse --verify --quiet "%MAIN_BRANCH%" >nul 2>&1
 if errorlevel 1 (
     git branch "%MAIN_BRANCH%" "origin/%MAIN_BRANCH%"
@@ -127,33 +136,46 @@ git log --oneline -1 HEAD
 echo origin/%MAIN_BRANCH% latest:
 git log --oneline -1 "origin/%MAIN_BRANCH%"
 echo.
-set "SWITCH="
-set /p "SWITCH=Switch to main and update it? [Y/N]: "
-if /i not "!SWITCH!"=="Y" (
+choice /c YN /n /m "Switch to main and update it? [Y/N]: "
+if errorlevel 2 (
     echo Not switching to main. Fetch is complete.
     goto :done
 )
 
+rem   IMPORTANT: this BAT file lives inside the repository, so "git switch"
+rem   can overwrite THIS VERY FILE on disk with main's version of it.
+rem   cmd.exe reads .bat files incrementally from disk rather than loading
+rem   the whole script into memory first, so continuing to execute inline
+rem   past this point could read stale/misaligned bytes at the old file's
+rem   read position. To avoid that, re-launch in a brand-new cmd.exe
+rem   process, which opens and reads whatever is now actually on disk.
 git switch "%MAIN_BRANCH%"
 if errorlevel 1 (
     echo [ERROR] Could not switch to %MAIN_BRANCH%.
     goto :fail
 )
+cmd /c "%~f0" __continue_after_switch__
+exit /b %errorlevel%
 
 :do_merge
-rem --- Update only if fast-forward is possible (no merge/rebase/reset) ---
+rem --- Update only if fast-forward is possible (no merge/rebase/reset).
+rem     This can ALSO overwrite this running file (main advancing changes
+rem     its own content), so it gets the same re-exec treatment below. ---
 git merge --ff-only "origin/%MAIN_BRANCH%"
 if errorlevel 1 (
     type "%~dp0update_diverged_message.txt"
     goto :done
 )
+cmd /c "%~f0" __continue_after_merge__
+exit /b %errorlevel%
+
+:post_update
 echo [OK] main updated:
 git log --oneline -1 HEAD
 
 echo.
-set "RUN_SETUP="
-set /p "RUN_SETUP=Reinstall dependencies now? [Y/N]: "
-if /i "!RUN_SETUP!"=="Y" (
+choice /c YN /n /m "Reinstall dependencies now? [Y/N]: "
+if not errorlevel 2 (
     call "%ROOT%\scripts\setup_windows.bat" nopause
     if errorlevel 1 (
         echo [ERROR] Setup failed.
@@ -162,9 +184,8 @@ if /i "!RUN_SETUP!"=="Y" (
 )
 
 echo.
-set "START_NOW="
-set /p "START_NOW=Start the app now? [Y/N]: "
-if /i "!START_NOW!"=="Y" (
+choice /c YN /n /m "Start the app now? [Y/N]: "
+if not errorlevel 2 (
     call "%ROOT%\scripts\start_windows.bat"
     if errorlevel 1 (
         echo [ERROR] start_windows.bat failed.

@@ -97,9 +97,8 @@ if errorlevel 1 (
 )
 
 echo.
-set "START_NOW="
-set /p "START_NOW=Start the app now? [Y/N]: "
-if /i "!START_NOW!"=="Y" (
+choice /c YN /n /m "Start the app now? [Y/N]: "
+if not errorlevel 2 (
     call "%TARGET_DIR%\scripts\start_windows.bat"
     if errorlevel 1 (
         echo [ERROR] start_windows.bat failed. Check the messages above.

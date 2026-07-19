@@ -1,0 +1,78 @@
+name: Windows BAT check
+
+# The Windows .bat scripts under scripts/ and bootstrap_local_site_walk.bat
+# repeatedly broke only on real Windows cmd.exe even after passing every
+# Linux-based static check. This workflow runs the scripts themselves on
+# an actual Windows runner, so a genuine "'X' is not recognized as an
+# internal or external command" regression is caught before merge instead
+# of only being discovered on someone's machine.
+#
+# Interactive prompts (choice /c YN, pause) are satisfied by piping a
+# newline via "echo.|" so each run completes without hanging. Paths that
+# require fetching a real pull request over the network are intentionally
+# not exercised here (fragile/flaky in CI); the git-switch self-overwrite
+# fix itself is covered by static, file-structure regression tests in
+# backend/tests/test_windows_scripts.py, which run on every OS.
+
+on:
+  push:
+    paths:
+      - "**.bat"
+      - "**_message.txt"
+      - "scripts/check_windows_scripts.py"
+      - ".github/workflows/windows-bat-check.yml"
+  pull_request:
+    paths:
+      - "**.bat"
+      - "**_message.txt"
+      - "scripts/check_windows_scripts.py"
+      - ".github/workflows/windows-bat-check.yml"
+  workflow_dispatch:
+
+jobs:
+  windows-bat-check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Static audit (ASCII/CRLF/BOM/dangerous commands/self-overwrite guard)
+        run: python scripts\check_windows_scripts.py
+
+      - name: diagnose_windows.bat runs without an unrecognized-command error
+        shell: cmd
+        run: |
+          echo.| call scripts\diagnose_windows.bat > out.txt 2>&1
+          type out.txt
+          findstr /c:"is not recognized" out.txt && exit /b 1
+          exit /b 0
+
+      - name: review_pr_windows.bat usage path (no arguments)
+        shell: cmd
+        run: |
+          echo.| call scripts\review_pr_windows.bat > out.txt 2>&1
+          type out.txt
+          findstr /c:"is not recognized" out.txt && exit /b 1
+          exit /b 0
+
+      - name: review_pr_windows.bat invalid PR number path
+        shell: cmd
+        run: |
+          echo.| call scripts\review_pr_windows.bat abc > out.txt 2>&1
+          type out.txt
+          findstr /c:"is not recognized" out.txt && exit /b 1
+          exit /b 0
+
+      - name: update_windows.bat stops on a dirty working tree
+        shell: cmd
+        run: |
+          echo test-only change for CI, discarded below >> README.md
+          echo.| call scripts\update_windows.bat > out.txt 2>&1
+          type out.txt
+          git checkout -- README.md
+          findstr /c:"is not recognized" out.txt && exit /b 1
+          findstr /c:"Aborted" out.txt || exit /b 1
+          exit /b 0

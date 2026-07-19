@@ -101,6 +101,22 @@ scripts\review_pr_windows.bat 3
 確認を終えたら `git switch main` などで元のブランチへ戻ってください。
 `pr/<PR番号>` は確認専用のため、そこへ直接commitしないでください。
 
+`review_pr_windows.bat`はこのリポジトリ内のファイルであるため、`git switch`が
+実行中のスクリプト自身をPR側の内容へ書き換えることがあります。そのため
+ブランチ切替の直後に新しいcmd.exeプロセスへ自分自身を再実行させ、
+書き換え後のファイルを最初から正しく読み直す構造にしています
+(`update_windows.bat`の`git switch`/`git merge --ff-only`も同様)。
+
+実行後、期待される表示は次のとおりです。
+
+- ブランチ切替(`Reset branch 'pr/<番号>'`等)の直後に、未知のコマンドエラー
+  (`'...' is not recognized as an internal or external command`)が出ない
+- 現在のcommitが正しく表示される
+- 信頼確認メッセージが表示される
+- Y/N入力待ちで停止する(`choice`による入力のみを受け付ける)
+- Nを選ぶとsetupを実行せず終了する
+- Yを選ぶとsetupへ進み、setup失敗時はstartを実行しない
+
 ### 診断
 
 ```bat
@@ -146,6 +162,7 @@ npm run dev
 | frontend 型チェック | `npm run typecheck` |
 | frontend build | `npm run build` |
 | Windows BAT静的検査 | `python scripts/check_windows_scripts.py`(`pytest`実行時にも自動で走ります) |
+| Windows実機check(CI) | `.github/workflows/windows-bat-check.yml`(windows-latest上でBATを実際に実行) |
 
 ## データの取り扱い方針
 
@@ -181,6 +198,20 @@ npm run dev
   「Local Site Walk - Frontend」ウィンドウを閉じ、タスクマネージャーで`node.exe`や
   Viteのプロセスが残っていないか確認してから再実行してください。node_modulesの自動削除や
   プロセスの自動終了は行いません
+- Y/N確認は `set /p` ではなく `choice /c YN` を使用します。任意の文字列ではなく
+  Y/Nキー入力のみを受け付けるため、想定外の入力による構文破損を避けられます
+- `update_windows.bat`・`review_pr_windows.bat`は、リポジトリ内の自分自身のファイルを
+  `git switch`/`git merge --ff-only`で書き換える可能性があるため、その直後に新しい
+  cmd.exeプロセスへ自分自身を再実行させます(実行中のファイルが書き換わった状態のまま
+  読み進めると、cmd.exeが無関係なバイト列を未知のコマンドとして実行することがあるため)
+- `scripts\check_windows_scripts.py`はASCII-only・CRLF・BOMなし・危険コマンドに加え、
+  行末caret・`call echo`/`call set`等の二重展開・`*_message.txt`の`call`・
+  `for /f`ループ変数の直接実行・`set /p`の残存・自己書き換えgitコマンドの
+  再実行ガード不在も検出します(`pytest`実行時にも自動で走ります)
+- `.github/workflows/windows-bat-check.yml`が、実際のWindowsランナー上で
+  診断・使用方法表示・不正なPR番号・dirty tree停止の各経路を実行し、
+  「未知のコマンドとして認識されない」ことを確認します(実PRのfetchはCIでは
+  行いません。ネットワーク・PR番号依存でCIが不安定になるのを避けるためです)
 
 ## PR #1 merge前後の実施順序(運用メモ)
 
