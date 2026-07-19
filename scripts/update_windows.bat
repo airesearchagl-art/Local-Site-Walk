@@ -161,10 +161,15 @@ if /i "!RUN_SETUP!"=="Y" (
     )
 )
 
-call "%ROOT%\scripts\start_windows.bat"
-if errorlevel 1 (
-    echo [ERROR] start_windows.bat failed.
-    goto :fail
+echo.
+set "START_NOW="
+set /p "START_NOW=Start the app now? [Y/N]: "
+if /i "!START_NOW!"=="Y" (
+    call "%ROOT%\scripts\start_windows.bat"
+    if errorlevel 1 (
+        echo [ERROR] start_windows.bat failed.
+        goto :fail
+    )
 )
 
 :done

@@ -77,6 +77,8 @@ scripts\update_windows.bat
   divergeしている場合も、上書きを避けるため中止します(reset/rebase/force切替は行いません)
 - `main`以外のブランチにいる場合は、現在のcommitと`origin/main`の最新commitを
   表示したうえでY/N確認してから切り替えます
+- 更新後、依存関係の再インストールとアプリ起動はそれぞれ個別にY/N確認します
+  (自動では実行しません)
 
 ### PRをWindows実機で確認する
 
