@@ -1,10 +1,15 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
+rem chcp 65001 (UTF-8) is needed so "type" below renders the UTF-8
+rem Japanese message .txt files correctly. This BAT's own body is
+rem ASCII-only, so chcp does not affect how cmd.exe parses it.
 chcp 65001 >nul
-title Local Site Walk - 更新
+title Local Site Walk - Update
 
-rem Expected repository this script updates (HTTPS)
-set "REPO_URL=https://github.com/airesearchagl-art/Local-Site-Walk.git"
+rem Expected repository (owner/repo, compared after normalizing any
+rem of: https://.../repo.git, https://.../repo, git@host:repo.git,
+rem ssh://git@host/repo.git)
+set "EXPECTED_REPO=airesearchagl-art/Local-Site-Walk"
 rem Always targets main (not the current branch's upstream)
 set "MAIN_BRANCH=main"
 
@@ -13,45 +18,45 @@ for %%i in ("%~dp0..") do set "ROOT=%%~fi"
 cd /d "%ROOT%"
 
 echo ==============================================
-echo  Local Site Walk 更新
+echo  Local Site Walk - Update
 echo ==============================================
 
 rem --- Check this is a Git repository ---
 git rev-parse --is-inside-work-tree >nul 2>&1
 if errorlevel 1 (
-    echo [エラー] Gitリポジトリではありません: "%ROOT%"
+    echo [ERROR] Not a Git repository: "%ROOT%"
     goto :fail
 )
 
 echo --- remote ---
 git remote -v
 echo.
-echo --- 現在のブランチ ---
+echo --- current branch ---
 set "CUR_BRANCH="
 for /f "delims=" %%b in ('git branch --show-current') do set "CUR_BRANCH=%%b"
 echo %CUR_BRANCH%
 echo.
 
-rem --- Validate remote origin (do not update unless it matches) ---
+rem --- Validate remote origin (normalize owner/repo, accept https/ssh) ---
 set "CURRENT_URL="
 for /f "delims=" %%u in ('git remote get-url origin 2^>nul') do set "CURRENT_URL=%%u"
 if not defined CURRENT_URL (
-    echo [エラー] remote origin が設定されていません。中止します。
+    echo [ERROR] remote "origin" is not set. Aborting.
     goto :fail
 )
-rem Normalize trailing .git before comparing (same rule as bootstrap_local_site_walk.bat)
-set "URL_A=!CURRENT_URL!"
-if /i "!URL_A:~-4!"==".git" set "URL_A=!URL_A:~0,-4!"
-set "URL_B=%REPO_URL%"
-if /i "!URL_B:~-4!"==".git" set "URL_B=!URL_B:~0,-4!"
-if /i not "!URL_A!"=="!URL_B!" (
-    echo [エラー] remote origin が想定リポジトリと一致しないため中止します。
-    echo   現在: !CURRENT_URL!
-    echo   想定: %REPO_URL%
-    type "%~dp0update_ssh_unsupported_message.txt"
+set "URL_NORM=!CURRENT_URL!"
+if /i "!URL_NORM:~-4!"==".git" set "URL_NORM=!URL_NORM:~0,-4!"
+set "URL_NORM=!URL_NORM:ssh://git@github.com/=!"
+set "URL_NORM=!URL_NORM:git@github.com:=!"
+set "URL_NORM=!URL_NORM:https://github.com/=!"
+set "URL_NORM=!URL_NORM:http://github.com/=!"
+if /i not "!URL_NORM!"=="!EXPECTED_REPO!" (
+    type "%~dp0update_origin_mismatch_message.txt"
+    echo Current : !CURRENT_URL!
+    echo Expected: !EXPECTED_REPO! on github.com
     goto :fail
 )
-echo [OK] remote origin は想定リポジトリと一致しています。
+echo [OK] origin matches the expected repository.
 echo.
 
 rem --- Protect uncommitted changes ---
@@ -62,76 +67,114 @@ if defined DIRTY (
     goto :fail
 )
 
-echo git fetch を実行します...
+echo Running git fetch ...
 git fetch origin
 if errorlevel 1 (
-    echo [エラー] fetch に失敗しました。ネットワークを確認してください。
+    echo [ERROR] fetch failed. Check your network connection.
     goto :fail
 )
 
 rem --- Check origin/main exists ---
 git rev-parse --verify --quiet "origin/%MAIN_BRANCH%" >nul 2>&1
 if errorlevel 1 (
-    echo [エラー] origin/%MAIN_BRANCH% が見つかりません。中止します。
+    echo [ERROR] origin/%MAIN_BRANCH% not found. Aborting.
     goto :fail
 )
 
-if /i "%CUR_BRANCH%"=="%MAIN_BRANCH%" goto :update_main
+rem --- Ensure a local main branch exists, tracking origin/main ---
+git rev-parse --verify --quiet "%MAIN_BRANCH%" >nul 2>&1
+if errorlevel 1 (
+    git branch "%MAIN_BRANCH%" "origin/%MAIN_BRANCH%"
+    if errorlevel 1 (
+        echo [ERROR] Could not create local %MAIN_BRANCH% from origin/%MAIN_BRANCH%.
+        goto :fail
+    )
+)
+
+rem --- Ahead/behind check: local main vs origin/main ---
+rem left  = commits only on local main  (AHEAD)
+rem right = commits only on origin/main (BEHIND)
+set "AHEAD="
+set "BEHIND="
+for /f "tokens=1,2" %%a in ('git rev-list --left-right --count "%MAIN_BRANCH%...origin/%MAIN_BRANCH%"') do (
+    set "AHEAD=%%a"
+    set "BEHIND=%%b"
+)
+if not defined AHEAD set "AHEAD=0"
+if not defined BEHIND set "BEHIND=0"
+echo main ahead of origin/main : !AHEAD! commit(s)
+echo main behind origin/main   : !BEHIND! commit(s)
+echo.
+
+if not "!AHEAD!"=="0" (
+    if "!BEHIND!"=="0" (
+        type "%~dp0update_local_ahead_message.txt"
+        goto :done
+    )
+    if not "!BEHIND!"=="0" (
+        type "%~dp0update_diverged_message.txt"
+        goto :done
+    )
+)
+
+rem --- At this point AHEAD is 0: fast-forward is always safe ---
+if /i "%CUR_BRANCH%"=="%MAIN_BRANCH%" goto :do_merge
 
 rem --- On a branch other than main: show status and confirm before switching ---
-echo.
 type "%~dp0update_branch_switch_message.txt"
-echo 現在のブランチ:
+echo Current HEAD:
 git log --oneline -1 HEAD
-echo origin/%MAIN_BRANCH% の最新:
+echo origin/%MAIN_BRANCH% latest:
 git log --oneline -1 "origin/%MAIN_BRANCH%"
 echo.
 set "SWITCH="
-set /p "SWITCH=main へ切り替えて更新しますか? [Y/N]: "
+set /p "SWITCH=Switch to main and update it? [Y/N]: "
 if /i not "!SWITCH!"=="Y" (
-    echo mainへの切り替えは行いませんでした。fetchのみ完了しています。
+    echo Not switching to main. Fetch is complete.
     goto :done
 )
 
-git rev-parse --verify --quiet "%MAIN_BRANCH%" >nul 2>&1
+git switch "%MAIN_BRANCH%"
 if errorlevel 1 (
-    git switch -c "%MAIN_BRANCH%" --track "origin/%MAIN_BRANCH%"
-) else (
-    git switch "%MAIN_BRANCH%"
-)
-if errorlevel 1 (
-    echo [エラー] main への切り替えに失敗しました。
+    echo [ERROR] Could not switch to %MAIN_BRANCH%.
     goto :fail
 )
 
-:update_main
+:do_merge
 rem --- Update only if fast-forward is possible (no merge/rebase/reset) ---
 git merge --ff-only "origin/%MAIN_BRANCH%"
 if errorlevel 1 (
     type "%~dp0update_diverged_message.txt"
     goto :done
 )
-echo [OK] main を最新の状態に更新しました。
+echo [OK] main updated:
+git log --oneline -1 HEAD
 
 echo.
 set "RUN_SETUP="
-set /p "RUN_SETUP=依存関係の再セットアップを実行しますか? [Y/N]: "
+set /p "RUN_SETUP=Reinstall dependencies now? [Y/N]: "
 if /i "!RUN_SETUP!"=="Y" (
     call "%ROOT%\scripts\setup_windows.bat" nopause
     if errorlevel 1 (
-        echo [エラー] 再セットアップに失敗しました。
+        echo [ERROR] Setup failed.
         goto :fail
     )
 )
 
+call "%ROOT%\scripts\start_windows.bat"
+if errorlevel 1 (
+    echo [ERROR] start_windows.bat failed.
+    goto :fail
+)
+
 :done
 echo.
-echo 更新処理を終了します。
+echo Update finished.
 pause
 exit /b 0
 
 :fail
 echo.
-echo 処理を中止しました。上のメッセージを確認してください。
+echo Aborted. See the messages above for details.
 pause
 exit /b 1
