@@ -60,7 +60,10 @@ SELF_MODIFYING_GIT_PATTERNS = [
     re.compile(r"\bgit\s+switch\b", re.IGNORECASE),
     re.compile(r"\bgit\s+merge\s+--ff-only\b", re.IGNORECASE),
 ]
-REEXEC_GUARD_PATTERN = re.compile(r'cmd\s+/c\s+"%~f0"', re.IGNORECASE)
+# Matches "cmd /c "%~f0" ..." and the double-quote-wrapped
+# "cmd /c ""%~f0" ..."" form required when extra quoted arguments follow
+# (see the /C quoting comment next to each "cmd /c" call in the scripts).
+REEXEC_GUARD_PATTERN = re.compile(r'cmd\s+/c\s+"+%~f0"', re.IGNORECASE)
 
 CALL_DANGEROUS_PATTERN = re.compile(
     r"^\s*call\s+(echo\b|set\b|%[^%]+%|![^!]+!)", re.IGNORECASE

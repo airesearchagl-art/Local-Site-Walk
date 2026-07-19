@@ -154,7 +154,10 @@ if errorlevel 1 (
     echo [ERROR] Could not switch to %MAIN_BRANCH%.
     goto :fail
 )
-cmd /c "%~f0" __continue_after_switch__
+rem   The outer pair of quotes below is required by cmd.exe's own /C
+rem   argument parsing: see the identical comment in review_pr_windows.bat
+rem   next to its own "cmd /c" call for the full explanation.
+cmd /c ""%~f0" __continue_after_switch__"
 exit /b %errorlevel%
 
 :do_merge
@@ -166,7 +169,8 @@ if errorlevel 1 (
     type "%~dp0update_diverged_message.txt"
     goto :done
 )
-cmd /c "%~f0" __continue_after_merge__
+rem   Same /C quoting reason as the switch re-exec above.
+cmd /c ""%~f0" __continue_after_merge__"
 exit /b %errorlevel%
 
 :post_update

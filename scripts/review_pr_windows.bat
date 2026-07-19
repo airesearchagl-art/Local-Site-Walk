@@ -121,7 +121,16 @@ if errorlevel 1 (
     echo [ERROR] Could not switch branch.
     goto :fail
 )
-cmd /c "%~f0" __continue__ "%PR_NUM%"
+rem   The outer pair of quotes below is required by cmd.exe's own /C
+rem   argument parsing: with more than exactly two quote characters on
+rem   the line (here: around %~f0 AND around %PR_NUM%), cmd falls back to
+rem   stripping only the very first and very last quote on the line,
+rem   which corrupts a quoted path that contains spaces (e.g.
+rem   "...\Local Site Walk\...") into an effectively unquoted one that
+rem   then gets split on its spaces. Wrapping the whole thing in one more
+rem   pair of quotes makes that stripped-away outer pair the ones that
+rem   get removed, leaving the inner quoting intact.
+cmd /c ""%~f0" __continue__ "%PR_NUM%""
 exit /b %errorlevel%
 
 :post_switch
