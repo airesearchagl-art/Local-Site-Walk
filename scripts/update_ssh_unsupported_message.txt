@@ -1,0 +1,2 @@
+SSH形式のURLはこのスクリプトの対象外です。
+HTTPSのURLをご利用いただくか、手動でgit fetchとfast-forward mergeを実行してください。

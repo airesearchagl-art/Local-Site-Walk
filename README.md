@@ -55,7 +55,7 @@ scripts\start_windows.bat
 | 操作 | 実行するファイル |
 | --- | --- |
 | 起動 | `scripts\start_windows.bat`(backend/frontendを別ウィンドウで起動しブラウザを開く) |
-| 更新 | `scripts\update_windows.bat`(未commit変更があれば中止。fast-forward可能な場合のみ更新) |
+| 更新 | `scripts\update_windows.bat`(常に`main`を更新対象とする。未commit変更があれば中止。`main`以外のブランチにいる場合は状況を表示しY/N確認のうえ切替。fast-forward可能な場合のみ更新) |
 | PR確認 | `scripts\review_pr_windows.bat <PR番号>`(下記参照) |
 | 問題調査 | `scripts\diagnose_windows.bat`(Git/Python/Node/ポート/データフォルダ等の状態表示) |
 
