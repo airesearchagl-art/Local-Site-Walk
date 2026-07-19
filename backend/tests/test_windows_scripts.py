@@ -36,24 +36,36 @@ def _read(name: str) -> str:
     return path.read_bytes().decode("ascii")
 
 
+def _non_blank_lines(text: str, start: int, end: int) -> list[str]:
+    return [
+        line.strip()
+        for line in text[start:end].splitlines()
+        if line.strip()
+    ]
+
+
 def test_review_pr_reexecs_after_git_switch() -> None:
     """git switch -C can overwrite review_pr_windows.bat's own file with
     the PR's version. Continuing inline afterward reads stale bytes at
     the old file position - this must instead re-exec via a fresh
-    cmd.exe process that reads whatever is now actually on disk."""
+    cmd.exe process that reads whatever is now actually on disk. Only
+    the errorlevel check on the switch itself may run in between - any
+    other command (another git call, echo [OK], the :post_switch label,
+    etc.) sneaking into this gap would reintroduce the exact class of
+    bug this re-exec exists to prevent."""
     text = _read("review_pr_windows.bat")
     switch_index = text.index('git switch -C "%PR_BRANCH%" FETCH_HEAD')
     reexec_index = text.index('cmd /c "%~f0" __continue__')
     assert reexec_index > switch_index, (
         "the re-exec must occur after git switch -C, not before it"
     )
-    # No non-label, non-comment, non-guard code may run between the
-    # switch and the re-exec other than the errorlevel check on switch.
-    between = text[switch_index:reexec_index]
-    assert "post_switch" not in between.split("\n")[0], (
-        "post-switch logic must live behind the :post_switch label, "
-        "reached only via the re-exec"
-    )
+    assert _non_blank_lines(text, switch_index, reexec_index) == [
+        'git switch -C "%PR_BRANCH%" FETCH_HEAD',
+        "if errorlevel 1 (",
+        "echo [ERROR] Could not switch branch.",
+        "goto :fail",
+        ")",
+    ]
 
 
 def test_review_pr_continue_marker_is_the_first_branch_taken() -> None:
@@ -69,15 +81,33 @@ def test_review_pr_continue_marker_is_the_first_branch_taken() -> None:
 
 def test_update_reexecs_after_switch_and_after_merge() -> None:
     """Both git switch (to main) and git merge --ff-only can overwrite
-    update_windows.bat's own file, so each needs its own re-exec."""
+    update_windows.bat's own file, so each needs its own re-exec, with
+    only the errorlevel check on that git command in between - any other
+    command sneaking into either gap would reintroduce the exact class
+    of bug the re-exec exists to prevent."""
     text = _read("update_windows.bat")
+
     switch_index = text.index('git switch "%MAIN_BRANCH%"')
-    switch_reexec_index = text.index('__continue_after_switch__', switch_index)
+    switch_reexec_index = text.index('cmd /c "%~f0" __continue_after_switch__')
     assert switch_reexec_index > switch_index
+    assert _non_blank_lines(text, switch_index, switch_reexec_index) == [
+        'git switch "%MAIN_BRANCH%"',
+        "if errorlevel 1 (",
+        "echo [ERROR] Could not switch to %MAIN_BRANCH%.",
+        "goto :fail",
+        ")",
+    ]
 
     merge_index = text.index('git merge --ff-only "origin/%MAIN_BRANCH%"')
-    merge_reexec_index = text.index('__continue_after_merge__', merge_index)
+    merge_reexec_index = text.index('cmd /c "%~f0" __continue_after_merge__')
     assert merge_reexec_index > merge_index
+    assert _non_blank_lines(text, merge_index, merge_reexec_index) == [
+        'git merge --ff-only "origin/%MAIN_BRANCH%"',
+        "if errorlevel 1 (",
+        'type "%~dp0update_diverged_message.txt"',
+        "goto :done",
+        ")",
+    ]
 
 
 def test_no_bat_uses_set_p_for_yes_no_prompts() -> None:
