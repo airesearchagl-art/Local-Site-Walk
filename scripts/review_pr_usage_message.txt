@@ -1,0 +1,2 @@
+使い方: scripts\review_pr_windows.bat PR番号
+例:     scripts\review_pr_windows.bat 2
