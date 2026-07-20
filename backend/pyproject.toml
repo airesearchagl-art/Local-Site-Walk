@@ -7,3 +7,9 @@ select = ["E", "F", "I", "W", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# 素の `pytest` コンソールスクリプトで直接起動した場合、cwdがsys.pathへ
+# 自動追加されないため `import app...` が ModuleNotFoundError になっていた
+# (`python -m pytest` はcwdを自動追加するため再現しなかった)。rootdir
+# (backend/) をpythonpathへ明示することで、起動方法やPYTHONPATH手動設定に
+# 依存せず安定してimportできるようにする。
+pythonpath = ["."]
