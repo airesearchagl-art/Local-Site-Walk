@@ -1,5 +1,5 @@
 .container {
-  max-width: 800px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 2rem 1.5rem;
 }
@@ -56,6 +56,27 @@ button:hover {
   background: #1d4ed8;
 }
 
+button:disabled {
+  background: #9aa5b1;
+  cursor: default;
+}
+
+button.back {
+  background: transparent;
+  color: #2563eb;
+  padding-left: 0;
+}
+
+button.danger {
+  background: #fff;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+button.danger:hover {
+  background: #fef2f2;
+}
+
 .notice {
   background: #fef9c3;
   color: #713f12;
@@ -71,6 +92,47 @@ button:hover {
   color: #52606d;
 }
 
+.meta {
+  color: #52606d;
+  font-size: 0.85rem;
+}
+
+.note {
+  font-size: 0.85rem;
+}
+
+/* --- project list --- */
+
+.project-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: #fff;
+  border: 1px solid #e4e7eb;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.project-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: #3e4c59;
+}
+
+.project-form input {
+  padding: 0.5rem;
+  border: 1px solid #cbd2d9;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+
+.project-form button {
+  align-self: flex-start;
+}
+
 .project-list {
   list-style: none;
   padding: 0;
@@ -78,21 +140,106 @@ button:hover {
 
 .project-list li {
   display: flex;
-  flex-direction: column;
-  padding: 0.75rem 1rem;
+  align-items: stretch;
+  gap: 0.5rem;
   margin-bottom: 0.5rem;
+}
+
+.project-link {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  text-align: left;
+  padding: 0.75rem 1rem;
   background: #fff;
   border: 1px solid #e4e7eb;
   border-radius: 8px;
+  color: #1f2933;
 }
 
-.project-list .meta {
+.project-link:hover {
+  background: #f0f6ff;
+}
+
+/* --- video grid --- */
+
+.video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.video-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0;
+  background: #fff;
+  border: 1px solid #e4e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  color: #1f2933;
+  text-align: left;
+}
+
+.video-card:hover {
+  background: #f0f6ff;
+}
+
+.video-card img,
+.thumb-placeholder {
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  object-fit: cover;
+  display: block;
+}
+
+.thumb-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e4e7eb;
   color: #52606d;
   font-size: 0.85rem;
 }
 
-.project-list .note {
-  font-size: 0.85rem;
+.video-name {
+  font-weight: 600;
+  padding: 0 0.75rem;
+  word-break: break-all;
+}
+
+.video-card .meta {
+  padding: 0 0.75rem 0.75rem;
+}
+
+/* --- player --- */
+
+.player-canvas {
+  margin-top: 0.5rem;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+  min-height: 320px;
+}
+
+.player-canvas canvas {
+  display: block;
+  cursor: grab;
+}
+
+.player-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.player-controls input[type="range"] {
+  flex: 1;
 }
 
 footer {

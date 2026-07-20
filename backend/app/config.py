@@ -28,3 +28,8 @@ def get_data_dir() -> Path:
     if raw:
         return Path(raw).expanduser()
     return Path.home() / DEFAULT_DATA_DIR_NAME
+
+
+def get_thumbnails_dir() -> Path:
+    """サムネイル保存先(データディレクトリ内。リポジトリ外)。"""
+    return get_data_dir() / "thumbnails"
