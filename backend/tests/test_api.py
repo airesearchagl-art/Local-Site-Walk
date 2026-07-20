@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app.db import get_connection
 from app.main import app
 
 client = TestClient(app)
@@ -138,3 +139,55 @@ def test_video_detail_thumbnail_and_stream(data_dir, video_folder) -> None:
     assert res.content == b"dummy-bytes"
 
     assert client.get("/api/videos/99999").status_code == 404
+
+
+def test_scan_ignores_video_reachable_only_via_symlinked_directory(
+    data_dir, video_folder
+) -> None:
+    (video_folder / "walk1.mp4").write_bytes(b"x")
+
+    outside = video_folder.parent / "outside"
+    outside.mkdir()
+    (outside / "secret.mp4").write_bytes(b"x")
+
+    link = video_folder / "linked"
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"この環境ではsymlinkを作成できません: {exc}")
+
+    project = _create_project(video_folder)
+    res = client.post(f"/api/projects/{project['id']}/scan")
+    assert res.status_code == 200
+    assert res.json()["added"] == 1
+
+    videos = client.get(f"/api/projects/{project['id']}/videos").json()
+    assert [v["file_name"] for v in videos] == ["walk1.mp4"]
+
+
+def test_delete_project_does_not_remove_thumbnail_outside_thumbnails_dir(
+    data_dir, video_folder
+) -> None:
+    (video_folder / "walk.mp4").write_bytes(b"x")
+    project = _create_project(video_folder)
+    client.post(f"/api/projects/{project['id']}/scan")
+    video = client.get(f"/api/projects/{project['id']}/videos").json()[0]
+
+    outside_dir = data_dir.parent / "outside-thumbs"
+    outside_dir.mkdir()
+    outside_file = outside_dir / "should-survive.jpg"
+    outside_file.write_bytes(b"not-a-real-thumbnail")
+
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE videos SET thumbnail_path = ? WHERE id = ?",
+            (str(outside_file), video["id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    res = client.delete(f"/api/projects/{project['id']}")
+    assert res.status_code == 204
+    assert outside_file.exists()

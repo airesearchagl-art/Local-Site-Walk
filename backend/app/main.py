@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import media
+from . import media, paths, scan
 from .config import ALLOWED_ORIGINS, get_thumbnails_dir
 from .db import db_conn
 
@@ -149,10 +149,9 @@ def _delete_thumbnail_files(conn: sqlite3.Connection, project_id: int) -> None:
     rows = conn.execute(
         "SELECT thumbnail_path FROM videos WHERE project_id = ?", (project_id,)
     ).fetchall()
+    thumbnails_dir = get_thumbnails_dir()
     for row in rows:
-        thumb = row["thumbnail_path"]
-        if thumb:
-            Path(thumb).unlink(missing_ok=True)
+        paths.safe_unlink_within(row["thumbnail_path"], thumbnails_dir)
 
 
 # --- system -----------------------------------------------------------------
@@ -230,7 +229,7 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
         raise HTTPException(status_code=400, detail="登録フォルダが見つかりません")
 
     found = sorted(
-        p for p in folder.rglob("*") if media.is_video_file(p)
+        p for p in scan.iter_scan_candidates(folder) if media.is_video_file(p)
     )
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     thumbnails_dir = get_thumbnails_dir()
@@ -289,8 +288,7 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
         (project_id,),
     ).fetchall():
         if row_v["file_path"] not in found_set:
-            if row_v["thumbnail_path"]:
-                Path(row_v["thumbnail_path"]).unlink(missing_ok=True)
+            paths.safe_unlink_within(row_v["thumbnail_path"], thumbnails_dir)
             conn.execute("DELETE FROM videos WHERE id = ?", (row_v["id"],))
             removed += 1
 
