@@ -247,19 +247,21 @@ npm run dev
   直接検証します(実PRのfetchはCIでは行いません。ネットワーク・PR番号依存で
   CIが不安定になるのを避けるためです)
 
-## PR #1 merge前後の実施順序(運用メモ)
+## PR #1 merge前後の実施順序(完了記録)
 
-> **警告**: PRをmergeする**前に**GitHubのデフォルトブランチを空の`main`へ変更しないでください。
-> その時点の`main`は空のベースcommitのみのため、通常の`git clone`でアプリファイルも
-> `scripts\setup_windows.bat`も取得できず、bootstrap BATによる導入も失敗します。
-> デフォルトブランチの変更は必ずmergeと反映確認の**後**に行ってください。
+> **参考**: PRをmergeする**前に**GitHubのデフォルトブランチを空の`main`へ変更してはいけませんでした。
+> その時点の`main`は空のベースcommitのみのため、通常の`git clone`ではアプリファイルも
+> `scripts\setup_windows.bat`も取得できず、bootstrap BATによる導入も失敗するためです。
+> デフォルトブランチの変更はmergeと反映確認の**後**に行いました。
 
-1. feature branch(`claude/local-site-walk-scaffold-v3ab3x`)でWindows実機確認を行う
-2. PR #1 を `main` へmergeする
-3. `main` にアプリファイル一式(backend / frontend / scripts / BAT)が反映されたことを確認する
-4. GitHubのデフォルトブランチを `main` へ変更する
-5. bootstrap BATによる新規clone(初回導入)が問題なく動くことを再確認する
-6. 問題なければ `backup/scaffold-2da9522` ブランチを削除する
+以下は初期セットアップ時(PR #1 merge前後)に実施した手順の記録です。現在はすべて完了しており、新規clone・導入時にこれらの手順を行う必要はありません。
+
+1. [x] feature branch(`claude/local-site-walk-scaffold-v3ab3x`)でWindows実機確認を行った
+2. [x] PR #1 を `main` へmergeした
+3. [x] `main` にアプリファイル一式(backend / frontend / scripts / BAT)が反映されたことを確認した
+4. [x] GitHubのデフォルトブランチを `main` へ変更した
+5. [x] bootstrap BATによる新規clone(初回導入)が問題なく動くことを確認した
+6. [x] `backup/scaffold-2da9522` ブランチを削除した(削除済み。対応不要)
 
 ## ライセンス
 
