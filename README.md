@@ -193,6 +193,7 @@ npm run dev
 | frontend build | `npm run build` |
 | Windows BAT静的検査 | `python scripts/check_windows_scripts.py`(`pytest`実行時にも自動で走ります) |
 | Windows実機check(CI) | `.github/workflows/windows-bat-check.yml`(windows-latest上でBATを実際に実行) |
+| backend/frontend check(CI) | `.github/workflows/backend-frontend-checks.yml`(ubuntu-latest上で上記backend/frontendのlint・test・buildを実行。`backend/`変更時はbackend job、`frontend/`変更時はfrontend jobのみ実処理し、対象外の変更では該当jobをskipして即成功にする) |
 
 ## データの取り扱い方針
 
