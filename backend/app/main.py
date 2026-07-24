@@ -6,7 +6,6 @@
 """
 
 import sqlite3
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 
@@ -17,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from . import media, paths, scan
 from .config import ALLOWED_ORIGINS, get_thumbnails_dir
-from .db import db_conn
+from .db import db_conn, now_iso
 
 APP_VERSION = "0.2.0"
 
@@ -179,9 +178,15 @@ def list_projects(conn: DbConn) -> list[ProjectOut]:
 @app.post("/api/projects", status_code=201)
 def create_project(payload: ProjectCreate, conn: DbConn) -> ProjectOut:
     folder = _validate_folder(payload.folder_path)
+    # created_atはSQLのDEFAULTに頼らずここで明示的に生成する。DEFAULT式は
+    # テーブル作成時にsqlite_masterへ焼き込まれるため、旧DEFAULT
+    # (datetime('now'))で作成済みの既存DBではCREATE TABLE IF NOT EXISTSが
+    # 新しいDEFAULT式へ更新してくれない。明示的に渡すことで、既存DB上でも
+    # 新規行は常にnow_iso()と同じISO8601形式になる。
     cur = conn.execute(
-        "INSERT INTO projects (name, folder_path, note) VALUES (?, ?, ?)",
-        (payload.name.strip(), folder, payload.note),
+        "INSERT INTO projects (name, folder_path, note, created_at)"
+        " VALUES (?, ?, ?, ?)",
+        (payload.name.strip(), folder, payload.note, now_iso()),
     )
     return _project_out(conn, _project_row(conn, cur.lastrowid))
 
@@ -231,7 +236,7 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
     found = sorted(
         p for p in scan.iter_scan_candidates(folder) if media.is_video_file(p)
     )
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    now = now_iso()
     thumbnails_dir = get_thumbnails_dir()
 
     added = updated = thumbnails_generated = 0

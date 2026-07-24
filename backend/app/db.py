@@ -2,22 +2,30 @@
 
 DBファイルはデータディレクトリ(LSW_DATA_DIR)内に置き、Git管理しない。
 接続はリクエストごとに開閉する(テストで環境変数を切り替えられるようにするため)。
+
+タイムスタンプ(TEXT列)はすべてISO8601・UTC・秒精度・タイムゾーンオフセット付き
+(例: "2026-07-24T12:34:56+00:00")で統一する。Python側は datetime.now(timezone.utc)
+.isoformat(timespec="seconds") と同じ形式になるため、そのまま datetime.fromisoformat()
+で読み戻せる。SQL側のDEFAULTもこの形式に合わせて strftime で生成する。
 """
 
 import sqlite3
 from collections.abc import Iterator
+from datetime import datetime, timezone
 
 from .config import get_data_dir
 
 DB_FILE_NAME = "local_site_walk.db"
 
+# strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now') は now_iso() と同じ書式
+# (ISO8601, UTC, 秒精度, +00:00オフセット)を返す。'now' は常にUTC。
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     folder_path TEXT,
     note TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now'))
 );
 
 CREATE TABLE IF NOT EXISTS videos (
@@ -36,6 +44,21 @@ CREATE TABLE IF NOT EXISTS videos (
 );
 """
 
+# 旧形式(SQLiteのdatetime('now')が生成した "YYYY-MM-DD HH:MM:SS"、UTCだが
+# 'T'区切りもオフセットもない)で保存された既存行を新形式へ正規化する。
+# 対象はUTC値そのままなので情報欠落はなく、'T'を含む行(=新形式)は対象外
+# にすることで、起動のたびに実行しても副作用がない(冪等)。
+_NORMALIZE_LEGACY_CREATED_AT = """
+UPDATE projects
+SET created_at = REPLACE(created_at, ' ', 'T') || '+00:00'
+WHERE created_at NOT LIKE '%T%';
+"""
+
+
+def now_iso() -> str:
+    """現在時刻をISO8601・UTC・秒精度の文字列で返す(scanned_at等で使用)。"""
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
 
 def get_connection() -> sqlite3.Connection:
     data_dir = get_data_dir()
@@ -47,6 +70,8 @@ def get_connection() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    conn.execute(_NORMALIZE_LEGACY_CREATED_AT)
+    conn.commit()
     return conn
 
 
