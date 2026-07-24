@@ -44,14 +44,19 @@ CREATE TABLE IF NOT EXISTS videos (
 );
 """
 
-# 旧形式(SQLiteのdatetime('now')が生成した "YYYY-MM-DD HH:MM:SS"、UTCだが
-# 'T'区切りもオフセットもない)で保存された既存行を新形式へ正規化する。
-# 対象はUTC値そのままなので情報欠落はなく、'T'を含む行(=新形式)は対象外
-# にすることで、起動のたびに実行しても副作用がない(冪等)。
+# 旧形式(SQLiteのdatetime('now')が生成した "YYYY-MM-DD HH:MM:SS"、19文字・
+# UTCだが'T'区切りもオフセットもない)で保存された既存行だけを新形式へ
+# 正規化する。対象はUTC値そのままなので情報欠落はなく、文字数と桁位置を
+# GLOBで厳密に絞ることで、想定外の文字列(空文字・既にISO8601・任意の
+# 文字列)は一切変更しない。起動のたびに実行しても、変換後の行は19文字の
+# 数字シェイプに一致しなくなるため副作用がない(冪等)。
 _NORMALIZE_LEGACY_CREATED_AT = """
 UPDATE projects
 SET created_at = REPLACE(created_at, ' ', 'T') || '+00:00'
-WHERE created_at NOT LIKE '%T%';
+WHERE length(created_at) = 19
+  AND created_at GLOB
+    '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+    || ' [0-9][0-9]:[0-9][0-9]:[0-9][0-9]';
 """
 
 
