@@ -1,9 +1,14 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { fetchHealth } from "./api";
 import ProjectDetailView from "./views/ProjectDetailView";
 import ProjectListView from "./views/ProjectListView";
-import PlayerView from "./views/PlayerView";
 import "./App.css";
+
+// three.js (used only by the 360 player) is the largest dependency in the
+// bundle. Loading PlayerView lazily keeps it out of the initial chunk, so
+// the project list / detail screens don't pay for it until the player is
+// actually opened.
+const PlayerView = lazy(() => import("./views/PlayerView"));
 
 type BackendState = "checking" | "ok" | "error";
 
@@ -63,12 +68,20 @@ function App() {
         />
       )}
       {route.view === "player" && (
-        <PlayerView
-          videoId={route.videoId}
-          onBack={() =>
-            setRoute({ view: "project", projectId: route.projectId })
+        <Suspense
+          fallback={
+            <section>
+              <p className="meta">プレイヤーを読み込み中…</p>
+            </section>
           }
-        />
+        >
+          <PlayerView
+            videoId={route.videoId}
+            onBack={() =>
+              setRoute({ view: "project", projectId: route.projectId })
+            }
+          />
+        </Suspense>
       )}
 
       <footer>
