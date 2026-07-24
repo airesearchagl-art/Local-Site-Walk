@@ -17,6 +17,15 @@ name: Backend and Frontend Checks
 # forever waiting for a check that never appears. Running the job unconditionally
 # but skipping its expensive steps keeps the check names ("backend", "frontend")
 # stable and always resolved (success) even when there's nothing to check.
+#
+# The "windows-path-safety" job below follows the same job-internal
+# path-diff pattern, but runs on windows-latest and scopes itself to the
+# path-safety implementation (app/paths.py, app/scan.py) and its tests.
+# backend/frontend never ran on Windows before, so this is the only job
+# that can catch junction/NTFS-case-insensitive-specific regressions in
+# that code - Linux symlinks and NTFS junctions are detected differently
+# by Path.is_symlink(), so the Linux-only backend job cannot substitute
+# for this.
 
 on:
   pull_request:
@@ -177,3 +186,75 @@ jobs:
       - name: No frontend-relevant changes
         if: steps.changes.outputs.changed == 'false'
         run: echo "No changes under frontend/ or this workflow file - skipping frontend checks."
+
+  windows-path-safety:
+    name: windows-path-safety
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine whether path-safety files changed
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            base="${{ github.event.before }}"
+            head="${{ github.sha }}"
+          else
+            # workflow_dispatch: no base/head to diff, always run the checks.
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          paths=(
+            backend/app/paths.py
+            backend/app/scan.py
+            backend/app/config.py
+            backend/tests/test_paths.py
+            backend/tests/test_scan.py
+            backend/tests/test_windows_path_safety.py
+            backend/pyproject.toml
+            backend/requirements.txt
+            backend/requirements-dev.txt
+            .github/workflows/backend-frontend-checks.yml
+          )
+          if git diff --name-only "$base" "$head" -- "${paths[@]}" | grep -q .; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.changes.outputs.changed == 'true'
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install backend dependencies
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: backend
+        run: pip install -r requirements-dev.txt
+
+      # Scoped to the path-safety implementation and its tests, not the
+      # full backend suite: this job exists to catch Windows/NTFS-specific
+      # regressions (junction handling, case-insensitive path matching),
+      # not to duplicate the Linux backend job's broader coverage.
+      - name: pytest (path safety, Windows)
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: backend
+        run: python -m pytest -q tests/test_paths.py tests/test_scan.py tests/test_windows_path_safety.py
+
+      - name: No path-safety-relevant changes
+        if: steps.changes.outputs.changed == 'false'
+        run: echo "No changes under path-safety files or this workflow file - skipping windows-path-safety checks."
