@@ -6,7 +6,11 @@ from app.scan import iter_scan_candidates
 
 
 def _names(root: Path) -> set[str]:
-    return {str(p.relative_to(root)) for p in iter_scan_candidates(root)}
+    # as_posix() (not str()) so assertions comparing against "sub/x.mp4"
+    # literals don't depend on the OS path separator - str(WindowsPath)
+    # uses "\", which made this comparison fail on Windows even though
+    # iter_scan_candidates() itself found the correct files.
+    return {p.relative_to(root).as_posix() for p in iter_scan_candidates(root)}
 
 
 def test_iter_scan_candidates_finds_regular_nested_files(tmp_path: Path) -> None:
