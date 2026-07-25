@@ -194,6 +194,7 @@ npm run dev
 | Windows BAT静的検査 | `python scripts/check_windows_scripts.py`(`pytest`実行時にも自動で走ります) |
 | Windows実機check(CI) | `.github/workflows/windows-bat-check.yml`(windows-latest上でBATを実際に実行) |
 | backend/frontend check(CI) | `.github/workflows/backend-frontend-checks.yml`(ubuntu-latest上で上記backend/frontendのlint・test・buildを実行。`backend/`変更時はbackend job、`frontend/`変更時はfrontend jobのみ実処理し、対象外の変更では該当jobをskipして即成功にする) |
+| Windows path safety check(CI) | 同workflow内の`windows-path-safety` job(windows-latest上で`app/paths.py` / `app/scan.py`等のpath safety関連ファイル変更時のみ`tests/test_paths.py` `tests/test_scan.py` `tests/test_windows_path_safety.py`を実行し、junction・NTFS大文字小文字非区別ファイルシステム上での挙動を検証。対象外の変更ではskipして即成功にする) |
 
 ## データの取り扱い方針
 
