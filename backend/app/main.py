@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import media, paths, scan
+from . import media, paths, scan, scan_runs
 from .config import ALLOWED_ORIGINS, get_thumbnails_dir
 from .db import db_conn, now_iso
 
@@ -81,6 +81,21 @@ class ScanResult(BaseModel):
     ffmpeg_available: bool
 
 
+class ScanRunOut(BaseModel):
+    id: int
+    project_id: int
+    started_at: str
+    finished_at: str | None
+    status: str
+    scanned_count: int | None
+    added_count: int | None
+    updated_count: int | None
+    missing_count: int | None
+    skipped_count: int | None
+    error_count: int | None
+    duration_ms: int | None
+
+
 # --- helpers ----------------------------------------------------------------
 
 
@@ -134,6 +149,23 @@ def _video_out(row: sqlite3.Row) -> VideoOut:
         codec=row["codec"],
         has_thumbnail=bool(thumb) and Path(thumb).is_file(),
         scanned_at=row["scanned_at"],
+    )
+
+
+def _scan_run_out(row: sqlite3.Row) -> ScanRunOut:
+    return ScanRunOut(
+        id=row["id"],
+        project_id=row["project_id"],
+        started_at=row["started_at"],
+        finished_at=row["finished_at"],
+        status=row["status"],
+        scanned_count=row["scanned_count"],
+        added_count=row["added_count"],
+        updated_count=row["updated_count"],
+        missing_count=row["missing_count"],
+        skipped_count=row["skipped_count"],
+        error_count=row["error_count"],
+        duration_ms=row["duration_ms"],
     )
 
 
@@ -233,69 +265,107 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
     if not folder.is_dir():
         raise HTTPException(status_code=400, detail="登録フォルダが見つかりません")
 
-    found = sorted(
-        p for p in scan.iter_scan_candidates(folder) if media.is_video_file(p)
-    )
-    now = now_iso()
-    thumbnails_dir = get_thumbnails_dir()
+    scan_run_id, started_monotonic = scan_runs.start_scan_run(conn, project_id)
+    # 'running'行を即commitする。以降で例外が起きても、FastAPIの
+    # db_connディペンデンシはyield後のcommitを実行しない(例外がそのまま
+    # 呼び出し元へ伝播するため)ので、finished/failed更新は下のexcept節で
+    # 明示的にcommitする。
+    conn.commit()
 
-    added = updated = thumbnails_generated = 0
-    for path in found:
-        file_path = str(path)
-        existing = conn.execute(
-            "SELECT * FROM videos WHERE project_id = ? AND file_path = ?",
-            (project_id, file_path),
-        ).fetchone()
-        meta = media.probe_metadata(path) or {}
-        values = (
-            path.stat().st_size,
-            meta.get("duration_seconds"),
-            meta.get("width"),
-            meta.get("height"),
-            meta.get("codec"),
-            now,
+    try:
+        found = sorted(
+            p for p in scan.iter_scan_candidates(folder) if media.is_video_file(p)
         )
-        if existing is None:
-            cur = conn.execute(
-                "INSERT INTO videos (project_id, file_name, file_path, size_bytes,"
-                " duration_seconds, width, height, codec, scanned_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (project_id, path.name, file_path, *values),
-            )
-            video_id = cur.lastrowid
-            added += 1
-        else:
-            video_id = existing["id"]
-            conn.execute(
-                "UPDATE videos SET size_bytes = ?, duration_seconds = ?, width = ?,"
-                " height = ?, codec = ?, scanned_at = ? WHERE id = ?",
-                (*values, video_id),
-            )
-            updated += 1
+        now = now_iso()
+        thumbnails_dir = get_thumbnails_dir()
 
-        thumb_path = thumbnails_dir / f"{video_id}.jpg"
-        if not thumb_path.is_file():
-            if media.generate_thumbnail(path, thumb_path):
-                thumbnails_generated += 1
+        added = updated = thumbnails_generated = 0
+        for path in found:
+            file_path = str(path)
+            existing = conn.execute(
+                "SELECT * FROM videos WHERE project_id = ? AND file_path = ?",
+                (project_id, file_path),
+            ).fetchone()
+            meta = media.probe_metadata(path) or {}
+            values = (
+                path.stat().st_size,
+                meta.get("duration_seconds"),
+                meta.get("width"),
+                meta.get("height"),
+                meta.get("codec"),
+                now,
+            )
+            if existing is None:
+                cur = conn.execute(
+                    "INSERT INTO videos (project_id, file_name, file_path,"
+                    " size_bytes, duration_seconds, width, height, codec,"
+                    " scanned_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (project_id, path.name, file_path, *values),
+                )
+                video_id = cur.lastrowid
+                added += 1
             else:
-                thumb_path = None
-        if thumb_path is not None:
-            conn.execute(
-                "UPDATE videos SET thumbnail_path = ? WHERE id = ?",
-                (str(thumb_path), video_id),
-            )
+                video_id = existing["id"]
+                conn.execute(
+                    "UPDATE videos SET size_bytes = ?, duration_seconds = ?,"
+                    " width = ?, height = ?, codec = ?, scanned_at = ?"
+                    " WHERE id = ?",
+                    (*values, video_id),
+                )
+                updated += 1
 
-    # フォルダから消えたファイルの行とサムネイルを片付ける
-    removed = 0
-    found_set = {str(p) for p in found}
-    for row_v in conn.execute(
-        "SELECT id, file_path, thumbnail_path FROM videos WHERE project_id = ?",
-        (project_id,),
-    ).fetchall():
-        if row_v["file_path"] not in found_set:
-            paths.safe_unlink_within(row_v["thumbnail_path"], thumbnails_dir)
-            conn.execute("DELETE FROM videos WHERE id = ?", (row_v["id"],))
-            removed += 1
+            thumb_path = thumbnails_dir / f"{video_id}.jpg"
+            if not thumb_path.is_file():
+                if media.generate_thumbnail(path, thumb_path):
+                    thumbnails_generated += 1
+                else:
+                    thumb_path = None
+            if thumb_path is not None:
+                conn.execute(
+                    "UPDATE videos SET thumbnail_path = ? WHERE id = ?",
+                    (str(thumb_path), video_id),
+                )
+
+        # フォルダから消えたファイルの行とサムネイルを片付ける
+        removed = 0
+        found_set = {str(p) for p in found}
+        for row_v in conn.execute(
+            "SELECT id, file_path, thumbnail_path FROM videos WHERE project_id = ?",
+            (project_id,),
+        ).fetchall():
+            if row_v["file_path"] not in found_set:
+                paths.safe_unlink_within(row_v["thumbnail_path"], thumbnails_dir)
+                conn.execute("DELETE FROM videos WHERE id = ?", (row_v["id"],))
+                removed += 1
+    except Exception:
+        # このスキャン試行中にvideosへ加えた変更(候補列挙後にcommitされて
+        # いないINSERT/UPDATE/DELETE)をrollbackし、失敗したスキャンの
+        # 部分的な結果がDBへ残らないようにする。scan_runsの'running'行は
+        # tryブロックへ入る前にcommit済みなのでrollbackの影響を受けず、
+        # 続くfinish_scan_run()のUPDATEで対象にできる。
+        conn.rollback()
+        scan_runs.finish_scan_run(
+            conn,
+            scan_run_id,
+            status="failed",
+            counts=scan_runs.ScanRunCounts(),
+            started_monotonic=started_monotonic,
+        )
+        conn.commit()
+        raise
+
+    scan_runs.finish_scan_run(
+        conn,
+        scan_run_id,
+        status="finished",
+        counts=scan_runs.ScanRunCounts(
+            scanned_count=len(found),
+            added_count=added,
+            updated_count=updated,
+            missing_count=removed,
+        ),
+        started_monotonic=started_monotonic,
+    )
 
     return ScanResult(
         added=added,
@@ -305,6 +375,16 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
         ffprobe_available=media.ffprobe_available(),
         ffmpeg_available=media.ffmpeg_available(),
     )
+
+
+@app.get("/api/projects/{project_id}/scan_runs")
+def list_scan_runs(project_id: int, conn: DbConn) -> list[ScanRunOut]:
+    _project_row(conn, project_id)
+    rows = conn.execute(
+        "SELECT * FROM scan_runs WHERE project_id = ? ORDER BY id DESC",
+        (project_id,),
+    ).fetchall()
+    return [_scan_run_out(row) for row in rows]
 
 
 @app.get("/api/projects/{project_id}/videos")
