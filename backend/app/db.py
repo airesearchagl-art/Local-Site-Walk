@@ -60,6 +60,22 @@ CREATE TABLE IF NOT EXISTS scan_runs (
     error_count INTEGER,
     duration_ms INTEGER
 );
+
+-- scan_runごとの構造化エラーログ。1 scan_runに複数件紐付く。
+-- relative_path/messageは絶対パス・機密情報・生のexception表現を含まない
+-- (app/scan_errors.pyのsafe_relative_path()/classify_scan_exception()
+-- 経由でのみ書き込む)。
+CREATE TABLE IF NOT EXISTS scan_errors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_run_id INTEGER NOT NULL REFERENCES scan_runs(id) ON DELETE CASCADE,
+    error_code TEXT NOT NULL CHECK (error_code <> ''),
+    severity TEXT NOT NULL DEFAULT 'error' CHECK (severity IN ('error', 'warning')),
+    relative_path TEXT,
+    message TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_scan_errors_scan_run_id ON scan_errors(scan_run_id);
 """
 
 # 旧形式(SQLiteのdatetime('now')が生成した "YYYY-MM-DD HH:MM:SS"、19文字・
