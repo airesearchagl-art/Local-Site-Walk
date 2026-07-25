@@ -42,6 +42,24 @@ CREATE TABLE IF NOT EXISTS videos (
     scanned_at TEXT,
     UNIQUE (project_id, file_path)
 );
+
+-- 差分スキャン・削除検知・Diagnostics・Dashboard(Roadmap Phase 2以降)の基盤。
+-- 今回のPRはこのログ機構のみを追加し、スキャン処理自体(全件スキャン)は変更しない。
+-- statusは 'running' -> 'finished' または 'failed' のいずれかで終了する。
+CREATE TABLE IF NOT EXISTS scan_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now')),
+    finished_at TEXT,
+    status TEXT NOT NULL DEFAULT 'running',
+    scanned_count INTEGER,
+    added_count INTEGER,
+    updated_count INTEGER,
+    missing_count INTEGER,
+    skipped_count INTEGER,
+    error_count INTEGER,
+    duration_ms INTEGER
+);
 """
 
 # 旧形式(SQLiteのdatetime('now')が生成した "YYYY-MM-DD HH:MM:SS"、19文字・
