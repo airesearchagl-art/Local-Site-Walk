@@ -188,16 +188,30 @@ def test_scan_run_counts_match_via_api(data_dir, video_folder) -> None:
 def test_scan_run_records_failure_on_exception(
     data_dir, video_folder, monkeypatch
 ) -> None:
+    """途中(2件目)で例外が起きた場合、1件目で挿入済みだったvideo行も
+    rollbackされ、DBに部分的な結果が残らないこと。scan_runsは'failed'
+    として記録されること。"""
     project = _create_project(video_folder)
-    (video_folder / "walk.mp4").write_bytes(b"x")
+    (video_folder / "walk1.mp4").write_bytes(b"x")
+    (video_folder / "walk2.mp4").write_bytes(b"x")
 
-    def boom(*args, **kwargs):
-        raise RuntimeError("boom")
+    call_count = {"n": 0}
 
-    monkeypatch.setattr("app.main.media.probe_metadata", boom)
+    def flaky_probe(path):
+        call_count["n"] += 1
+        if call_count["n"] >= 2:
+            raise RuntimeError("boom")
+        return {}
+
+    monkeypatch.setattr("app.main.media.probe_metadata", flaky_probe)
 
     with pytest.raises(RuntimeError):
         client.post(f"/api/projects/{project['id']}/scan")
+
+    # walk1.mp4(1件目)は例外前にINSERT済みだったはずだが、rollbackにより
+    # DBには一切残っていないこと。
+    videos = client.get(f"/api/projects/{project['id']}/videos").json()
+    assert videos == []
 
     runs = client.get(f"/api/projects/{project['id']}/scan_runs").json()
     assert len(runs) == 1
@@ -207,3 +221,26 @@ def test_scan_run_records_failure_on_exception(
     # 失敗時は集計値を確定できないため、追加・更新カウントは記録しない。
     assert runs[0]["added_count"] == 0
     assert runs[0]["scanned_count"] == 0
+
+
+def test_scan_run_records_failure_on_candidate_enumeration_exception(
+    data_dir, video_folder, monkeypatch
+) -> None:
+    """候補列挙(iter_scan_candidates)自体で例外が起きた場合も、
+    scan_runsが'running'のまま残らずfailedとして記録されること。"""
+    project = _create_project(video_folder)
+    (video_folder / "walk.mp4").write_bytes(b"x")
+
+    def boom(root):
+        raise RuntimeError("enum boom")
+
+    monkeypatch.setattr("app.main.scan.iter_scan_candidates", boom)
+
+    with pytest.raises(RuntimeError):
+        client.post(f"/api/projects/{project['id']}/scan")
+
+    runs = client.get(f"/api/projects/{project['id']}/scan_runs").json()
+    assert len(runs) == 1
+    assert runs[0]["status"] == "failed"
+    assert runs[0]["finished_at"] is not None
+    assert runs[0]["duration_ms"] is not None and runs[0]["duration_ms"] >= 0

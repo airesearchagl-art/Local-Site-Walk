@@ -338,6 +338,12 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
                 conn.execute("DELETE FROM videos WHERE id = ?", (row_v["id"],))
                 removed += 1
     except Exception:
+        # このスキャン試行中にvideosへ加えた変更(候補列挙後にcommitされて
+        # いないINSERT/UPDATE/DELETE)をrollbackし、失敗したスキャンの
+        # 部分的な結果がDBへ残らないようにする。scan_runsの'running'行は
+        # tryブロックへ入る前にcommit済みなのでrollbackの影響を受けず、
+        # 続くfinish_scan_run()のUPDATEで対象にできる。
+        conn.rollback()
         scan_runs.finish_scan_run(
             conn,
             scan_run_id,
