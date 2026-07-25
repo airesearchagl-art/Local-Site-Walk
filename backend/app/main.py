@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import media, paths, scan, scan_runs
+from . import media, paths, scan, scan_errors, scan_runs
 from .config import ALLOWED_ORIGINS, get_thumbnails_dir
 from .db import db_conn, now_iso
 
@@ -96,6 +96,16 @@ class ScanRunOut(BaseModel):
     duration_ms: int | None
 
 
+class ScanErrorOut(BaseModel):
+    id: int
+    scan_run_id: int
+    error_code: str
+    severity: str
+    relative_path: str | None
+    message: str
+    created_at: str
+
+
 # --- helpers ----------------------------------------------------------------
 
 
@@ -166,6 +176,30 @@ def _scan_run_out(row: sqlite3.Row) -> ScanRunOut:
         skipped_count=row["skipped_count"],
         error_count=row["error_count"],
         duration_ms=row["duration_ms"],
+    )
+
+
+def _scan_run_row(
+    conn: sqlite3.Connection, project_id: int, scan_run_id: int
+) -> sqlite3.Row:
+    row = conn.execute(
+        "SELECT * FROM scan_runs WHERE id = ? AND project_id = ?",
+        (scan_run_id, project_id),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="スキャン実行記録が見つかりません")
+    return row
+
+
+def _scan_error_out(row: sqlite3.Row) -> ScanErrorOut:
+    return ScanErrorOut(
+        id=row["id"],
+        scan_run_id=row["scan_run_id"],
+        error_code=row["error_code"],
+        severity=row["severity"],
+        relative_path=row["relative_path"],
+        message=row["message"],
+        created_at=row["created_at"],
     )
 
 
@@ -272,6 +306,9 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
     # 明示的にcommitする。
     conn.commit()
 
+    # 例外発生時にscan_errorsへ記録する「どのファイルを処理中だったか」。
+    # 候補列挙自体で例外が起きた場合はNoneのまま(対象ファイル不明)。
+    current_path: Path | None = None
     try:
         found = sorted(
             p for p in scan.iter_scan_candidates(folder) if media.is_video_file(p)
@@ -281,6 +318,7 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
 
         added = updated = thumbnails_generated = 0
         for path in found:
+            current_path = path
             file_path = str(path)
             existing = conn.execute(
                 "SELECT * FROM videos WHERE project_id = ? AND file_path = ?",
@@ -327,6 +365,7 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
                 )
 
         # フォルダから消えたファイルの行とサムネイルを片付ける
+        current_path = None
         removed = 0
         found_set = {str(p) for p in found}
         for row_v in conn.execute(
@@ -334,24 +373,39 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
             (project_id,),
         ).fetchall():
             if row_v["file_path"] not in found_set:
+                current_path = Path(row_v["file_path"])
                 paths.safe_unlink_within(row_v["thumbnail_path"], thumbnails_dir)
                 conn.execute("DELETE FROM videos WHERE id = ?", (row_v["id"],))
                 removed += 1
-    except Exception:
-        # このスキャン試行中にvideosへ加えた変更(候補列挙後にcommitされて
-        # いないINSERT/UPDATE/DELETE)をrollbackし、失敗したスキャンの
-        # 部分的な結果がDBへ残らないようにする。scan_runsの'running'行は
-        # tryブロックへ入る前にcommit済みなのでrollbackの影響を受けず、
-        # 続くfinish_scan_run()のUPDATEで対象にできる。
+    except Exception as exc:
+        # 1. このスキャン試行中にvideosへ加えた変更(候補列挙後にcommitされて
+        #    いないINSERT/UPDATE/DELETE)をrollbackし、失敗したスキャンの
+        #    部分的な結果がDBへ残らないようにする。scan_runsの'running'行は
+        #    tryブロックへ入る前にcommit済みなのでrollbackの影響を受けない。
         conn.rollback()
+        # 2. rollback後の新しいトランザクションでscan_errorを1件保存する。
+        error_code, message = scan_errors.classify_scan_exception(exc)
+        relative_path = scan_errors.safe_relative_path(current_path, folder)
+        scan_errors.record_scan_error(
+            conn,
+            scan_run_id,
+            error_code=error_code,
+            message=message,
+            relative_path=relative_path,
+        )
+        # 3. scan_runsをfailedへ更新し、4. error_countを実際に保存された
+        #    scan_errors件数に合わせる。
+        error_count = scan_errors.count_scan_errors(conn, scan_run_id)
         scan_runs.finish_scan_run(
             conn,
             scan_run_id,
             status="failed",
-            counts=scan_runs.ScanRunCounts(),
+            counts=scan_runs.ScanRunCounts(error_count=error_count),
             started_monotonic=started_monotonic,
         )
+        # 5. scan_error保存とfailed更新を同じ最終commitにまとめる。
         conn.commit()
+        # 6. 元の例外を再送出する。
         raise
 
     scan_runs.finish_scan_run(
@@ -385,6 +439,16 @@ def list_scan_runs(project_id: int, conn: DbConn) -> list[ScanRunOut]:
         (project_id,),
     ).fetchall()
     return [_scan_run_out(row) for row in rows]
+
+
+@app.get("/api/projects/{project_id}/scan_runs/{scan_run_id}/errors")
+def list_scan_run_errors(
+    project_id: int, scan_run_id: int, conn: DbConn
+) -> list[ScanErrorOut]:
+    _project_row(conn, project_id)
+    _scan_run_row(conn, project_id, scan_run_id)
+    rows = scan_errors.list_scan_errors(conn, scan_run_id)
+    return [_scan_error_out(row) for row in rows]
 
 
 @app.get("/api/projects/{project_id}/videos")
