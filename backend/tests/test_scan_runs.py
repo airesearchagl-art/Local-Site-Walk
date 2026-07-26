@@ -171,8 +171,9 @@ def test_scan_run_counts_match_via_api(data_dir, video_folder) -> None:
     assert run["finished_at"] is not None
     assert run["duration_ms"] is not None and run["duration_ms"] >= 0
 
-    # 2回目のスキャン: 1件削除・既存2件はupdateとして記録され、
-    # スキャンログは新しい行として追記される(上書きされない)。
+    # 2回目のスキャン: walk1.mp4を削除。walk2.mp4はsize/mtime不変のため
+    # 差分スキャンによりskipされ(updateではない)、スキャンログは新しい行
+    # として追記される(上書きされない)。
     (video_folder / "walk1.mp4").unlink()
     res2 = client.post(f"/api/projects/{project['id']}/scan")
     assert res2.status_code == 200
@@ -181,7 +182,8 @@ def test_scan_run_counts_match_via_api(data_dir, video_folder) -> None:
     assert len(runs2) == 2
     latest = runs2[0]
     assert latest["scanned_count"] == 1
-    assert latest["updated_count"] == 1
+    assert latest["updated_count"] == 0
+    assert latest["skipped_count"] == 1
     assert latest["missing_count"] == 1
 
 

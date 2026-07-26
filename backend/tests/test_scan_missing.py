@@ -128,8 +128,12 @@ def test_rescan_unchanged_file_stays_not_missing(data_dir, video_folder) -> None
     client.post(f"/api/projects/{project['id']}/scan")
 
     res = client.post(f"/api/projects/{project['id']}/scan")
-    assert res.json()["updated"] == 1
+    # size/mtimeが不変のため差分スキャンによりskipされ、updatedは0。
+    assert res.json()["updated"] == 0
     assert res.json()["removed"] == 0
+
+    runs = client.get(f"/api/projects/{project['id']}/scan_runs").json()
+    assert runs[0]["skipped_count"] == 1
 
     videos = client.get(f"/api/projects/{project['id']}/videos").json()
     video = _video_by_name(videos, "walk1.mp4")
@@ -274,7 +278,10 @@ def test_failed_scan_does_not_alter_missing_state(
     assert all(v["is_missing"] is False for v in videos_before)
 
     # walkBだけを残し、walkAは(取得順で先に処理される想定で)probe失敗させる。
+    # walkBはsizeを変えて差分ありにしておかないと、差分スキャンにより
+    # metadata取得(probe_metadata呼び出し)自体がskipされてしまう。
     (video_folder / "walkA.mp4").unlink()
+    (video_folder / "walkB.mp4").write_bytes(b"xx")
 
     def boom(path):
         raise FileNotFoundError("gone")

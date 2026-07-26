@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS videos (
     is_missing INTEGER NOT NULL DEFAULT 0,
     missing_since TEXT,
     last_seen_at TEXT,
+    file_mtime REAL,
     UNIQUE (project_id, file_path)
 );
 
@@ -123,6 +124,22 @@ def _ensure_videos_missing_columns(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE videos ADD COLUMN {column} {ddl}")
 
 
+# 差分スキャン(Phase 2)用。file_mtimeも同じ理由でALTER TABLEが必要。
+# サイズ比較は既存のsize_bytes列を再利用するため、新規カラムはfile_mtimeのみ。
+_VIDEOS_DIFF_COLUMNS: dict[str, str] = {
+    "file_mtime": "REAL",
+}
+
+
+def _ensure_videos_diff_columns(conn: sqlite3.Connection) -> None:
+    existing_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(videos)")
+    }
+    for column, ddl in _VIDEOS_DIFF_COLUMNS.items():
+        if column not in existing_columns:
+            conn.execute(f"ALTER TABLE videos ADD COLUMN {column} {ddl}")
+
+
 def get_connection() -> sqlite3.Connection:
     data_dir = get_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -134,6 +151,7 @@ def get_connection() -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
     _ensure_videos_missing_columns(conn)
+    _ensure_videos_diff_columns(conn)
     conn.execute(_NORMALIZE_LEGACY_CREATED_AT)
     conn.commit()
     return conn

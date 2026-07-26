@@ -111,7 +111,9 @@ def test_scan_registers_and_marks_missing_videos(data_dir, video_folder) -> None
 
     (video_folder / "walk2.MOV").unlink()
     res = client.post(f"/api/projects/{project['id']}/scan")
-    assert res.json()["updated"] == 1
+    # walk1.mp4はsize/mtime不変のため差分スキャンによりskipされ、
+    # updatedは0になる(物理削除されたwalk2.MOVのみremovedとして数える)。
+    assert res.json()["updated"] == 0
     assert res.json()["removed"] == 1
     res = client.get(f"/api/projects/{project['id']}/videos")
     videos = res.json()
