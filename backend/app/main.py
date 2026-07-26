@@ -67,12 +67,18 @@ class VideoOut(BaseModel):
     duration_seconds: float | None
     width: int | None
     height: int | None
-    codec: str | None
+    codec: str | None  # video codec(既存列。video_codecへのrenameはしない)
     has_thumbnail: bool
     scanned_at: str | None
     is_missing: bool
     missing_since: str | None
     last_seen_at: str | None
+    container_format: str | None
+    audio_codec: str | None
+    frame_rate: float | None
+    bit_rate: int | None  # bit/s
+    rotation: int | None  # degree(0〜360未満)
+    captured_at: str | None
 
 
 class ScanResult(BaseModel):
@@ -165,6 +171,12 @@ def _video_out(row: sqlite3.Row) -> VideoOut:
         is_missing=bool(row["is_missing"]),
         missing_since=row["missing_since"],
         last_seen_at=row["last_seen_at"],
+        container_format=row["container_format"],
+        audio_codec=row["audio_codec"],
+        frame_rate=row["frame_rate"],
+        bit_rate=row["bit_rate"],
+        rotation=row["rotation"],
+        captured_at=row["captured_at"],
     )
 
 
@@ -364,14 +376,22 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
                 meta.get("codec"),
                 now,
                 current_mtime,
+                meta.get("container_format"),
+                meta.get("audio_codec"),
+                meta.get("frame_rate"),
+                meta.get("bit_rate"),
+                meta.get("rotation"),
+                meta.get("captured_at"),
             )
             if existing is None:
                 cur = conn.execute(
                     "INSERT INTO videos (project_id, file_name, file_path,"
                     " size_bytes, duration_seconds, width, height, codec,"
-                    " scanned_at, file_mtime, is_missing, missing_since,"
-                    " last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0,"
-                    " NULL, ?)",
+                    " scanned_at, file_mtime, container_format, audio_codec,"
+                    " frame_rate, bit_rate, rotation, captured_at,"
+                    " is_missing, missing_since, last_seen_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                    " 0, NULL, ?)",
                     (project_id, path.name, file_path, *values, now),
                 )
                 video_id = cur.lastrowid
@@ -384,7 +404,9 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
                 conn.execute(
                     "UPDATE videos SET size_bytes = ?, duration_seconds = ?,"
                     " width = ?, height = ?, codec = ?, scanned_at = ?,"
-                    " file_mtime = ?, is_missing = 0, missing_since = NULL,"
+                    " file_mtime = ?, container_format = ?, audio_codec = ?,"
+                    " frame_rate = ?, bit_rate = ?, rotation = ?,"
+                    " captured_at = ?, is_missing = 0, missing_since = NULL,"
                     " last_seen_at = ? WHERE id = ?",
                     (*values, now, video_id),
                 )

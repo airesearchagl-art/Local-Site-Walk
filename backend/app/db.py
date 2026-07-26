@@ -44,6 +44,12 @@ CREATE TABLE IF NOT EXISTS videos (
     missing_since TEXT,
     last_seen_at TEXT,
     file_mtime REAL,
+    container_format TEXT,
+    audio_codec TEXT,
+    frame_rate REAL,
+    bit_rate INTEGER,
+    rotation INTEGER,
+    captured_at TEXT,
     UNIQUE (project_id, file_path)
 );
 
@@ -140,6 +146,28 @@ def _ensure_videos_diff_columns(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE videos ADD COLUMN {column} {ddl}")
 
 
+# 拡張動画メタデータ(Phase 3)用。既存のvideosテーブルへ同じ理由で
+# ALTER TABLEが必要。videoのcodec自体は既存のcodec列を引き続き使う
+# (video_codecへのrenameはしない)。
+_VIDEOS_METADATA_COLUMNS: dict[str, str] = {
+    "container_format": "TEXT",
+    "audio_codec": "TEXT",
+    "frame_rate": "REAL",
+    "bit_rate": "INTEGER",
+    "rotation": "INTEGER",
+    "captured_at": "TEXT",
+}
+
+
+def _ensure_videos_metadata_columns(conn: sqlite3.Connection) -> None:
+    existing_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(videos)")
+    }
+    for column, ddl in _VIDEOS_METADATA_COLUMNS.items():
+        if column not in existing_columns:
+            conn.execute(f"ALTER TABLE videos ADD COLUMN {column} {ddl}")
+
+
 def get_connection() -> sqlite3.Connection:
     data_dir = get_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -152,6 +180,7 @@ def get_connection() -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     _ensure_videos_missing_columns(conn)
     _ensure_videos_diff_columns(conn)
+    _ensure_videos_metadata_columns(conn)
     conn.execute(_NORMALIZE_LEGACY_CREATED_AT)
     conn.commit()
     return conn
