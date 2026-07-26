@@ -186,6 +186,126 @@ def test_unchanged_file_thumbnail_not_regenerated(
     assert calls["n"] == 0
 
 
+def test_skipped_video_last_seen_at_is_updated(
+    data_dir, video_folder, monkeypatch
+) -> None:
+    """skip対象でもlast_seen_atだけは今回のスキャン時刻へ更新される。"""
+    video_path = video_folder / "walk1.mp4"
+    video_path.write_bytes(b"x")
+    project = _create_project(video_folder)
+
+    timestamps = iter(
+        ["2026-01-01T00:00:00+00:00", "2026-01-01T00:05:00+00:00"]
+    )
+    monkeypatch.setattr("app.main.now_iso", lambda: next(timestamps))
+
+    client.post(f"/api/projects/{project['id']}/scan")
+    videos1 = client.get(f"/api/projects/{project['id']}/videos").json()
+    video1 = _video_by_name(videos1, "walk1.mp4")
+    assert video1["last_seen_at"] == "2026-01-01T00:00:00+00:00"
+
+    res2 = client.post(f"/api/projects/{project['id']}/scan")
+    body = res2.json()
+    assert body["added"] == 0
+    assert body["updated"] == 0
+
+    videos2 = client.get(f"/api/projects/{project['id']}/videos").json()
+    video2 = _video_by_name(videos2, "walk1.mp4")
+    assert video2["last_seen_at"] == "2026-01-01T00:05:00+00:00"
+    # scanned_at(metadata取得時刻)はskipのため更新されず維持される。
+    assert video2["scanned_at"] == video1["scanned_at"]
+    assert video2["size_bytes"] == video1["size_bytes"]
+
+    runs = client.get(f"/api/projects/{project['id']}/scan_runs").json()
+    assert runs[0]["skipped_count"] == 1
+    assert runs[0]["updated_count"] == 0
+
+
+def test_skipped_video_only_last_seen_at_changes_in_db(
+    data_dir, video_folder
+) -> None:
+    """DB行を直接比較し、last_seen_at以外(size_bytes/file_mtime/
+    duration_seconds等)がskip時に一切書き換わらないことを確認する。"""
+    video_path = video_folder / "walk1.mp4"
+    video_path.write_bytes(b"hello")
+    project = _create_project(video_folder)
+    client.post(f"/api/projects/{project['id']}/scan")
+
+    conn = get_connection()
+    try:
+        row_before = dict(
+            conn.execute(
+                "SELECT * FROM videos WHERE project_id = ?", (project["id"],)
+            ).fetchone()
+        )
+    finally:
+        conn.close()
+
+    client.post(f"/api/projects/{project['id']}/scan")
+
+    conn = get_connection()
+    try:
+        row_after = dict(
+            conn.execute(
+                "SELECT * FROM videos WHERE project_id = ?", (project["id"],)
+            ).fetchone()
+        )
+    finally:
+        conn.close()
+
+    for key in row_before:
+        if key == "last_seen_at":
+            continue
+        assert row_after[key] == row_before[key], key
+
+
+def test_failed_scan_rolls_back_last_seen_at_update_for_skipped_video(
+    data_dir, video_folder, monkeypatch
+) -> None:
+    """skip対象のlast_seen_at更新は、同じスキャン内の後続ファイルで
+    例外が起きた場合にrollbackされ、部分的な更新が残らない。"""
+    walk1 = video_folder / "walk1.mp4"
+    walk2 = video_folder / "walk2.mp4"
+    walk1.write_bytes(b"x")
+    walk2.write_bytes(b"y")
+    project = _create_project(video_folder)
+    client.post(f"/api/projects/{project['id']}/scan")
+
+    conn = get_connection()
+    try:
+        row_before = dict(
+            conn.execute(
+                "SELECT * FROM videos WHERE file_name = 'walk1.mp4'"
+            ).fetchone()
+        )
+    finally:
+        conn.close()
+
+    # walk2だけ内容を変えてmetadata取得(probe_metadata)が呼ばれるように
+    # し、そこで例外を発生させる。walk1は変更しないためskip対象のまま。
+    walk2.write_bytes(b"yy")
+
+    def boom(path):
+        raise FileNotFoundError("gone")
+
+    monkeypatch.setattr("app.main.media.probe_metadata", boom)
+
+    with pytest.raises(FileNotFoundError):
+        client.post(f"/api/projects/{project['id']}/scan")
+
+    conn = get_connection()
+    try:
+        row_after = dict(
+            conn.execute(
+                "SELECT * FROM videos WHERE file_name = 'walk1.mp4'"
+            ).fetchone()
+        )
+    finally:
+        conn.close()
+
+    assert row_after == row_before
+
+
 # --- size / mtime changes: update ----------------------------------------------------
 
 

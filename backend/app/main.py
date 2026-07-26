@@ -336,16 +336,22 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
             current_mtime = stat.st_mtime
 
             # 差分判定: 既存行があり、missingでもなく、size/mtimeが両方
-            # 一致する場合のみ「変更なし」としてmetadata取得・DB書き込みの
-            # どちらもskipする。missingからの復元は常に更新扱いにする
-            # (PR #14のmissing判定とは独立させるため、size/mtime一致でも
-            # 復元はskipしない)。
+            # 一致する場合のみ「変更なし」としてmetadata取得はskipする。
+            # missingからの復元は常に更新扱いにする(PR #14のmissing判定
+            # とは独立させるため、size/mtime一致でも復元はskipしない)。
             if (
                 existing is not None
                 and not existing["is_missing"]
                 and existing["size_bytes"] == current_size
                 and existing["file_mtime"] == current_mtime
             ):
+                # metadata(probe_metadata/thumbnail)・size・mtimeはそのまま
+                # 維持し、今回のスキャンで存在確認できた時刻としてlast_seen_at
+                # だけを更新する。updated_countは増やさない。
+                conn.execute(
+                    "UPDATE videos SET last_seen_at = ? WHERE id = ?",
+                    (now, existing["id"]),
+                )
                 skipped += 1
                 continue
 
