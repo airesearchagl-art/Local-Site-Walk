@@ -322,7 +322,7 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
         now = now_iso()
         thumbnails_dir = get_thumbnails_dir()
 
-        added = updated = thumbnails_generated = 0
+        added = updated = skipped = thumbnails_generated = 0
         for path in found:
             current_path = path
             file_path = str(path)
@@ -330,35 +330,62 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
                 "SELECT * FROM videos WHERE project_id = ? AND file_path = ?",
                 (project_id, file_path),
             ).fetchone()
+
+            stat = path.stat()
+            current_size = stat.st_size
+            current_mtime = stat.st_mtime
+
+            # 差分判定: 既存行があり、missingでもなく、size/mtimeが両方
+            # 一致する場合のみ「変更なし」としてmetadata取得はskipする。
+            # missingからの復元は常に更新扱いにする(PR #14のmissing判定
+            # とは独立させるため、size/mtime一致でも復元はskipしない)。
+            if (
+                existing is not None
+                and not existing["is_missing"]
+                and existing["size_bytes"] == current_size
+                and existing["file_mtime"] == current_mtime
+            ):
+                # metadata(probe_metadata/thumbnail)・size・mtimeはそのまま
+                # 維持し、今回のスキャンで存在確認できた時刻としてlast_seen_at
+                # だけを更新する。updated_countは増やさない。
+                conn.execute(
+                    "UPDATE videos SET last_seen_at = ? WHERE id = ?",
+                    (now, existing["id"]),
+                )
+                skipped += 1
+                continue
+
             meta = media.probe_metadata(path) or {}
             values = (
-                path.stat().st_size,
+                current_size,
                 meta.get("duration_seconds"),
                 meta.get("width"),
                 meta.get("height"),
                 meta.get("codec"),
                 now,
+                current_mtime,
             )
             if existing is None:
                 cur = conn.execute(
                     "INSERT INTO videos (project_id, file_name, file_path,"
                     " size_bytes, duration_seconds, width, height, codec,"
-                    " scanned_at, is_missing, missing_since, last_seen_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)",
+                    " scanned_at, file_mtime, is_missing, missing_since,"
+                    " last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0,"
+                    " NULL, ?)",
                     (project_id, path.name, file_path, *values, now),
                 )
                 video_id = cur.lastrowid
                 added += 1
             else:
-                # 通常の再検出・missingからの復元(is_missing=1だった行が
-                # 再度見つかった場合)のどちらもここを通る。復元は別カウンタを
-                # 持たずupdated_countへ含める。
+                # 通常の再検出(size/mtime変更あり)・missingからの復元
+                # (is_missing=1だった行が再度見つかった場合)のどちらも
+                # ここを通る。復元は別カウンタを持たずupdated_countへ含める。
                 video_id = existing["id"]
                 conn.execute(
                     "UPDATE videos SET size_bytes = ?, duration_seconds = ?,"
                     " width = ?, height = ?, codec = ?, scanned_at = ?,"
-                    " is_missing = 0, missing_since = NULL, last_seen_at = ?"
-                    " WHERE id = ?",
+                    " file_mtime = ?, is_missing = 0, missing_since = NULL,"
+                    " last_seen_at = ? WHERE id = ?",
                     (*values, now, video_id),
                 )
                 updated += 1
@@ -420,6 +447,7 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
             added_count=added,
             updated_count=updated,
             missing_count=removed,
+            skipped_count=skipped,
         ),
         started_monotonic=started_monotonic,
     )
