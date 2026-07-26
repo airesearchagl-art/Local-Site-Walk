@@ -87,7 +87,7 @@ def test_create_project_rejects_relative_folder(data_dir) -> None:
     assert res.status_code == 400
 
 
-def test_scan_registers_and_removes_videos(data_dir, video_folder) -> None:
+def test_scan_registers_and_marks_missing_videos(data_dir, video_folder) -> None:
     (video_folder / "walk1.mp4").write_bytes(b"not a real video")
     (video_folder / "walk2.MOV").write_bytes(b"not a real video")
     (video_folder / "ignore.txt").write_text("x")
@@ -105,13 +105,21 @@ def test_scan_registers_and_removes_videos(data_dir, video_folder) -> None:
     # 壊れたファイルはffprobe/ffmpegが失敗し、メタデータ・サムネイルなしで登録される
     assert videos[0]["duration_seconds"] is None
     assert videos[0]["has_thumbnail"] is False
+    assert videos[0]["is_missing"] is False
+    assert videos[0]["missing_since"] is None
+    assert videos[0]["last_seen_at"] is not None
 
     (video_folder / "walk2.MOV").unlink()
     res = client.post(f"/api/projects/{project['id']}/scan")
     assert res.json()["updated"] == 1
     assert res.json()["removed"] == 1
     res = client.get(f"/api/projects/{project['id']}/videos")
-    assert [v["file_name"] for v in res.json()] == ["walk1.mp4"]
+    videos = res.json()
+    # 物理削除ではなく論理削除のため、行は残ったままis_missing=trueになる。
+    assert [v["file_name"] for v in videos] == ["walk1.mp4", "walk2.MOV"]
+    walk2 = next(v for v in videos if v["file_name"] == "walk2.MOV")
+    assert walk2["is_missing"] is True
+    assert walk2["missing_since"] is not None
 
 
 def test_scan_without_folder_fails(data_dir) -> None:

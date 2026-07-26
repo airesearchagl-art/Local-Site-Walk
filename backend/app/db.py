@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS videos (
     codec TEXT,
     thumbnail_path TEXT,
     scanned_at TEXT,
+    is_missing INTEGER NOT NULL DEFAULT 0,
+    missing_since TEXT,
+    last_seen_at TEXT,
     UNIQUE (project_id, file_path)
 );
 
@@ -99,6 +102,27 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+# videosは既存テーブルのため、CREATE TABLE IF NOT EXISTSだけでは
+# 既にDBファイルを持つ環境へ新カラムが追加されない(projects.created_atの
+# DEFAULT追加時と同じ落とし穴)。PRAGMA table_infoで実際のカラムを確認し、
+# 不足分だけALTER TABLE ADD COLUMNする。既存行はis_missingがNOT NULL
+# DEFAULT 0のため0で埋まり、missing_since/last_seen_atはNULLのままになる。
+_VIDEOS_MISSING_COLUMNS: dict[str, str] = {
+    "is_missing": "INTEGER NOT NULL DEFAULT 0",
+    "missing_since": "TEXT",
+    "last_seen_at": "TEXT",
+}
+
+
+def _ensure_videos_missing_columns(conn: sqlite3.Connection) -> None:
+    existing_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(videos)")
+    }
+    for column, ddl in _VIDEOS_MISSING_COLUMNS.items():
+        if column not in existing_columns:
+            conn.execute(f"ALTER TABLE videos ADD COLUMN {column} {ddl}")
+
+
 def get_connection() -> sqlite3.Connection:
     data_dir = get_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -109,6 +133,7 @@ def get_connection() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    _ensure_videos_missing_columns(conn)
     conn.execute(_NORMALIZE_LEGACY_CREATED_AT)
     conn.commit()
     return conn

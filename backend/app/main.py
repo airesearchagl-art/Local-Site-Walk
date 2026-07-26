@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import media, paths, scan, scan_errors, scan_runs
+from . import media, paths, scan, scan_errors, scan_missing, scan_runs
 from .config import ALLOWED_ORIGINS, get_thumbnails_dir
 from .db import db_conn, now_iso
 
@@ -70,6 +70,9 @@ class VideoOut(BaseModel):
     codec: str | None
     has_thumbnail: bool
     scanned_at: str | None
+    is_missing: bool
+    missing_since: str | None
+    last_seen_at: str | None
 
 
 class ScanResult(BaseModel):
@@ -159,6 +162,9 @@ def _video_out(row: sqlite3.Row) -> VideoOut:
         codec=row["codec"],
         has_thumbnail=bool(thumb) and Path(thumb).is_file(),
         scanned_at=row["scanned_at"],
+        is_missing=bool(row["is_missing"]),
+        missing_since=row["missing_since"],
+        last_seen_at=row["last_seen_at"],
     )
 
 
@@ -337,18 +343,23 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
                 cur = conn.execute(
                     "INSERT INTO videos (project_id, file_name, file_path,"
                     " size_bytes, duration_seconds, width, height, codec,"
-                    " scanned_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (project_id, path.name, file_path, *values),
+                    " scanned_at, is_missing, missing_since, last_seen_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)",
+                    (project_id, path.name, file_path, *values, now),
                 )
                 video_id = cur.lastrowid
                 added += 1
             else:
+                # 通常の再検出・missingからの復元(is_missing=1だった行が
+                # 再度見つかった場合)のどちらもここを通る。復元は別カウンタを
+                # 持たずupdated_countへ含める。
                 video_id = existing["id"]
                 conn.execute(
                     "UPDATE videos SET size_bytes = ?, duration_seconds = ?,"
-                    " width = ?, height = ?, codec = ?, scanned_at = ?"
+                    " width = ?, height = ?, codec = ?, scanned_at = ?,"
+                    " is_missing = 0, missing_since = NULL, last_seen_at = ?"
                     " WHERE id = ?",
-                    (*values, video_id),
+                    (*values, now, video_id),
                 )
                 updated += 1
 
@@ -364,19 +375,11 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
                     (str(thumb_path), video_id),
                 )
 
-        # フォルダから消えたファイルの行とサムネイルを片付ける
+        # フォルダから消えたファイルは物理削除せず、is_missing=1へ遷移させる
+        # (論理削除)。サムネイルは復元時に再利用できるよう残す。
         current_path = None
-        removed = 0
         found_set = {str(p) for p in found}
-        for row_v in conn.execute(
-            "SELECT id, file_path, thumbnail_path FROM videos WHERE project_id = ?",
-            (project_id,),
-        ).fetchall():
-            if row_v["file_path"] not in found_set:
-                current_path = Path(row_v["file_path"])
-                paths.safe_unlink_within(row_v["thumbnail_path"], thumbnails_dir)
-                conn.execute("DELETE FROM videos WHERE id = ?", (row_v["id"],))
-                removed += 1
+        removed = scan_missing.mark_newly_missing(conn, project_id, found_set, now)
     except Exception as exc:
         # 1. このスキャン試行中にvideosへ加えた変更(候補列挙後にcommitされて
         #    いないINSERT/UPDATE/DELETE)をrollbackし、失敗したスキャンの
