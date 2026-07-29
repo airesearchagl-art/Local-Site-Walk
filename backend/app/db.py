@@ -50,6 +50,9 @@ CREATE TABLE IF NOT EXISTS videos (
     bit_rate INTEGER,
     rotation INTEGER,
     captured_at TEXT,
+    gps_latitude REAL,
+    gps_longitude REAL,
+    gps_altitude REAL,
     UNIQUE (project_id, file_path)
 );
 
@@ -168,6 +171,24 @@ def _ensure_videos_metadata_columns(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE videos ADD COLUMN {column} {ddl}")
 
 
+# 動画内に埋め込まれたGPS位置情報(Phase 3)用。既存のvideosテーブルへ
+# 同じ理由でALTER TABLEが必要。gps_source列やJSON blob列は追加しない。
+_VIDEOS_GPS_COLUMNS: dict[str, str] = {
+    "gps_latitude": "REAL",
+    "gps_longitude": "REAL",
+    "gps_altitude": "REAL",
+}
+
+
+def _ensure_videos_gps_columns(conn: sqlite3.Connection) -> None:
+    existing_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(videos)")
+    }
+    for column, ddl in _VIDEOS_GPS_COLUMNS.items():
+        if column not in existing_columns:
+            conn.execute(f"ALTER TABLE videos ADD COLUMN {column} {ddl}")
+
+
 def get_connection() -> sqlite3.Connection:
     data_dir = get_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -181,6 +202,7 @@ def get_connection() -> sqlite3.Connection:
     _ensure_videos_missing_columns(conn)
     _ensure_videos_diff_columns(conn)
     _ensure_videos_metadata_columns(conn)
+    _ensure_videos_gps_columns(conn)
     conn.execute(_NORMALIZE_LEGACY_CREATED_AT)
     conn.commit()
     return conn

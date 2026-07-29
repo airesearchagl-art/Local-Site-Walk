@@ -79,6 +79,9 @@ class VideoOut(BaseModel):
     bit_rate: int | None  # bit/s
     rotation: int | None  # degree(0〜360未満)
     captured_at: str | None
+    gps_latitude: float | None
+    gps_longitude: float | None
+    gps_altitude: float | None
 
 
 class ScanResult(BaseModel):
@@ -177,6 +180,9 @@ def _video_out(row: sqlite3.Row) -> VideoOut:
         bit_rate=row["bit_rate"],
         rotation=row["rotation"],
         captured_at=row["captured_at"],
+        gps_latitude=row["gps_latitude"],
+        gps_longitude=row["gps_longitude"],
+        gps_altitude=row["gps_altitude"],
     )
 
 
@@ -382,6 +388,9 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
                 meta.get("bit_rate"),
                 meta.get("rotation"),
                 meta.get("captured_at"),
+                meta.get("gps_latitude"),
+                meta.get("gps_longitude"),
+                meta.get("gps_altitude"),
             )
             if existing is None:
                 cur = conn.execute(
@@ -389,9 +398,10 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
                     " size_bytes, duration_seconds, width, height, codec,"
                     " scanned_at, file_mtime, container_format, audio_codec,"
                     " frame_rate, bit_rate, rotation, captured_at,"
+                    " gps_latitude, gps_longitude, gps_altitude,"
                     " is_missing, missing_since, last_seen_at)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
-                    " 0, NULL, ?)",
+                    " ?, ?, ?, 0, NULL, ?)",
                     (project_id, path.name, file_path, *values, now),
                 )
                 video_id = cur.lastrowid
@@ -400,13 +410,15 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
                 # 通常の再検出(size/mtime変更あり)・missingからの復元
                 # (is_missing=1だった行が再度見つかった場合)のどちらも
                 # ここを通る。復元は別カウンタを持たずupdated_countへ含める。
+                # GPSタグが今回消えていればNULLへ上書きされる(旧値は残さない)。
                 video_id = existing["id"]
                 conn.execute(
                     "UPDATE videos SET size_bytes = ?, duration_seconds = ?,"
                     " width = ?, height = ?, codec = ?, scanned_at = ?,"
                     " file_mtime = ?, container_format = ?, audio_codec = ?,"
                     " frame_rate = ?, bit_rate = ?, rotation = ?,"
-                    " captured_at = ?, is_missing = 0, missing_since = NULL,"
+                    " captured_at = ?, gps_latitude = ?, gps_longitude = ?,"
+                    " gps_altitude = ?, is_missing = 0, missing_since = NULL,"
                     " last_seen_at = ? WHERE id = ?",
                     (*values, now, video_id),
                 )
