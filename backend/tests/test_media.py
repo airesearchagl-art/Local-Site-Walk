@@ -118,6 +118,9 @@ def test_parse_ffprobe_json_handles_completely_empty_dict() -> None:
         "bit_rate": None,
         "rotation": None,
         "captured_at": None,
+        "gps_latitude": None,
+        "gps_longitude": None,
+        "gps_altitude": None,
     }
 
 

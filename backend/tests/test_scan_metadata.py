@@ -48,6 +48,9 @@ _FULL_METADATA = {
     "bit_rate": 1234567,
     "rotation": 90,
     "captured_at": "2026-01-02T03:04:05+00:00",
+    "gps_latitude": 35.6812,
+    "gps_longitude": 139.7671,
+    "gps_altitude": 44.0,
 }
 
 
@@ -408,5 +411,8 @@ def test_api_response_only_contains_expected_video_fields(
         "bit_rate",
         "rotation",
         "captured_at",
+        "gps_latitude",
+        "gps_longitude",
+        "gps_altitude",
     }
     assert set(video.keys()) == expected_keys
