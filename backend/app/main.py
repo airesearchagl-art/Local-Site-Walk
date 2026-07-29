@@ -158,7 +158,6 @@ def _project_out(conn: sqlite3.Connection, row: sqlite3.Row) -> ProjectOut:
 
 
 def _video_out(row: sqlite3.Row) -> VideoOut:
-    thumb = row["thumbnail_path"]
     return VideoOut(
         id=row["id"],
         project_id=row["project_id"],
@@ -169,7 +168,9 @@ def _video_out(row: sqlite3.Row) -> VideoOut:
         width=row["width"],
         height=row["height"],
         codec=row["codec"],
-        has_thumbnail=bool(thumb) and Path(thumb).is_file(),
+        has_thumbnail=_is_valid_thumbnail(
+            row["thumbnail_path"], get_thumbnails_dir()
+        ),
         scanned_at=row["scanned_at"],
         is_missing=bool(row["is_missing"]),
         missing_since=row["missing_since"],
@@ -232,6 +233,34 @@ def _video_row(conn: sqlite3.Connection, video_id: int) -> sqlite3.Row:
     if row is None:
         raise HTTPException(status_code=404, detail="動画が見つかりません")
     return row
+
+
+def _is_valid_thumbnail(thumbnail_path: str | None, thumbnails_dir: Path) -> bool:
+    """thumbnail_pathが実際に有効かどうかを判定する。
+
+    有効の条件: 値が存在する・thumbnails_dir配下に安全に解決できる
+    (path traversal・保存領域外・symlink経由の脱出を拒否)・通常ファイル
+    として存在する・size > 0。画像としてのデコード可否までは検証しない。
+    例外を一切外へ漏らさない。
+    """
+    if not thumbnail_path:
+        return False
+    try:
+        resolved_dir = paths.resolve_safe(thumbnails_dir)
+        resolved_path = paths.resolve_safe(Path(thumbnail_path))
+        if resolved_dir is None or resolved_path is None:
+            return False
+        if not paths.is_within(resolved_path, resolved_dir):
+            return False
+        if not resolved_path.is_file():
+            return False
+        return resolved_path.stat().st_size > 0
+    except (OSError, ValueError):
+        # ValueErrorはPath()/resolve()がembedded null byte等の不正な
+        # 文字列を受け取った場合に送出され得る。DB上のthumbnail_pathは
+        # 常にこのアプリ自身が生成した値のみが入る想定だが、念のため
+        # 例外を外へ一切漏らさない。
+        return False
 
 
 def _delete_thumbnail_files(conn: sqlite3.Connection, project_id: int) -> None:
@@ -333,12 +362,18 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
     # 例外発生時にscan_errorsへ記録する「どのファイルを処理中だったか」。
     # 候補列挙自体で例外が起きた場合はNoneのまま(対象ファイル不明)。
     current_path: Path | None = None
+    # thumbnails_dirはI/Oを伴わない純粋なパス計算なのでtryブロックの外で
+    # 計算してよく、except節でも(候補列挙より前に例外が起きた場合でも)
+    # 参照できるようにしておく。generated_thumbnail_pathsは、このスキャン
+    # 試行中に新規生成したthumbnailファイルのパスを集め、スキャン失敗時に
+    # DBのrollbackと整合させてfilesystem側もcleanupするために使う。
+    thumbnails_dir = get_thumbnails_dir()
+    generated_thumbnail_paths: list[Path] = []
     try:
         found = sorted(
             p for p in scan.iter_scan_candidates(folder) if media.is_video_file(p)
         )
         now = now_iso()
-        thumbnails_dir = get_thumbnails_dir()
 
         added = updated = skipped = thumbnails_generated = 0
         for path in found:
@@ -363,13 +398,29 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
                 and existing["size_bytes"] == current_size
                 and existing["file_mtime"] == current_mtime
             ):
-                # metadata(probe_metadata/thumbnail)・size・mtimeはそのまま
-                # 維持し、今回のスキャンで存在確認できた時刻としてlast_seen_at
-                # だけを更新する。updated_countは増やさない。
+                # metadata(probe_metadata)・size・mtimeはそのまま維持し、
+                # 今回のスキャンで存在確認できた時刻としてlast_seen_atだけを
+                # 更新する。updated_countは増やさない。
                 conn.execute(
                     "UPDATE videos SET last_seen_at = ? WHERE id = ?",
                     (now, existing["id"]),
                 )
+                # thumbnailが未生成・無効(削除された/0byte等)な場合だけ、
+                # probe_metadataを呼ばずにthumbnail生成のみ再試行する。
+                # 既存の有効なthumbnailがある場合は何もしない。生成に
+                # 成功した場合のみthumbnail_pathを更新し、失敗時は既存の
+                # 値(NULLまたは無効な旧パス)をそのまま維持する。
+                if not _is_valid_thumbnail(
+                    existing["thumbnail_path"], thumbnails_dir
+                ):
+                    retry_thumb_path = thumbnails_dir / f"{existing['id']}.jpg"
+                    if media.generate_thumbnail(path, retry_thumb_path):
+                        thumbnails_generated += 1
+                        generated_thumbnail_paths.append(retry_thumb_path)
+                        conn.execute(
+                            "UPDATE videos SET thumbnail_path = ? WHERE id = ?",
+                            (str(retry_thumb_path), existing["id"]),
+                        )
                 skipped += 1
                 continue
 
@@ -425,9 +476,10 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
                 updated += 1
 
             thumb_path = thumbnails_dir / f"{video_id}.jpg"
-            if not thumb_path.is_file():
+            if not _is_valid_thumbnail(str(thumb_path), thumbnails_dir):
                 if media.generate_thumbnail(path, thumb_path):
                     thumbnails_generated += 1
+                    generated_thumbnail_paths.append(thumb_path)
                 else:
                     thumb_path = None
             if thumb_path is not None:
@@ -447,6 +499,14 @@ def scan_project(project_id: int, conn: DbConn) -> ScanResult:
         #    部分的な結果がDBへ残らないようにする。scan_runsの'running'行は
         #    tryブロックへ入る前にcommit済みなのでrollbackの影響を受けない。
         conn.rollback()
+        # 1.5. DBはrollbackされたが、このスキャン試行中にfilesystemへ新規
+        #      生成したthumbnailファイルは残ってしまう(rollbackはDBのみ)。
+        #      DBとfilesystemの不整合を避けるため、生成済みファイルを
+        #      削除する。safe_unlink_within()は例外を投げない安全な
+        #      no-op(対象外パスやOSErrorはFalseを返すだけ)なので、
+        #      cleanup失敗が元の例外を上書きすることはない。
+        for generated_path in generated_thumbnail_paths:
+            paths.safe_unlink_within(str(generated_path), thumbnails_dir)
         # 2. rollback後の新しいトランザクションでscan_errorを1件保存する。
         error_code, message = scan_errors.classify_scan_exception(exc)
         relative_path = scan_errors.safe_relative_path(current_path, folder)

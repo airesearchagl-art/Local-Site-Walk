@@ -7,9 +7,11 @@
 import json
 import logging
 import math
+import os
 import re
 import shutil
 import subprocess
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -360,32 +362,58 @@ def probe_metadata(path: Path) -> dict | None:
 
 
 def generate_thumbnail(video_path: Path, out_path: Path) -> bool:
-    """動画からJPEGサムネイルを1枚生成する。成功したらTrue。"""
+    """動画からJPEGサムネイルを1枚生成する。成功したらTrue。
+
+    ffmpegの出力はout_pathと同じディレクトリ内の一時ファイルへ書き込み、
+    成功時のみos.replace()でout_pathへatomicに置き換える。これにより、
+    生成途中でffmpegが失敗しても既存の有効なthumbnail(再試行対象が
+    別ファイルの場合)を壊さず、失敗時に中途半端な出力ファイルが
+    out_pathへ残ることもない。一時ファイルは成功・失敗いずれの場合も
+    処理後に残さない。
+    """
     if not ffmpeg_available():
         return False
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    # 冒頭すぎる真っ黒フレームを避けて1秒地点を試し、短い動画は先頭で再試行する
-    for seek in ("1", "0"):
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-ss", seek,
-            "-i", str(video_path),
-            "-frames:v", "1",
-            "-vf", "scale=640:-2",
-            str(out_path),
-        ]
-        try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                timeout=THUMBNAIL_TIMEOUT_SECONDS,
-                check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            logger.warning("ffmpeg 実行に失敗: %s (%s)", video_path.name, exc)
-            return False
-        if proc.returncode == 0 and out_path.exists() and out_path.stat().st_size > 0:
-            return True
-    logger.warning("サムネイル生成に失敗: %s", video_path.name)
-    return False
+    # 拡張子(.jpg)を末尾に残す。ffmpegは出力ファイル名の拡張子から
+    # muxerを推測するため、拡張子が無い一時ファイル名だと出力形式を
+    # 決定できずエラーになる。
+    tmp_path = out_path.with_name(
+        f".{out_path.stem}.tmp-{uuid.uuid4().hex}{out_path.suffix}"
+    )
+    try:
+        # 冒頭すぎる真っ黒フレームを避けて1秒地点を試し、短い動画は先頭で再試行する
+        for seek in ("1", "0"):
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-ss", seek,
+                "-i", str(video_path),
+                "-frames:v", "1",
+                "-vf", "scale=640:-2",
+                str(tmp_path),
+            ]
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    timeout=THUMBNAIL_TIMEOUT_SECONDS,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                logger.warning("ffmpeg 実行に失敗: %s (%s)", video_path.name, exc)
+                return False
+            if (
+                proc.returncode == 0
+                and tmp_path.exists()
+                and tmp_path.stat().st_size > 0
+            ):
+                os.replace(tmp_path, out_path)
+                return True
+        logger.warning("サムネイル生成に失敗: %s", video_path.name)
+        return False
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass

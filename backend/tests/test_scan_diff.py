@@ -166,13 +166,29 @@ def test_unchanged_file_is_skipped_and_metadata_not_probed(
     assert latest["updated_count"] == 0
 
 
-def test_unchanged_file_thumbnail_not_regenerated(
+def test_unchanged_file_with_valid_thumbnail_is_not_regenerated(
     data_dir, video_folder, monkeypatch
 ) -> None:
-    """skip対象はthumbnail生成も試みない(重いmetadata処理をしない)。"""
-    (video_folder / "walk1.mp4").write_bytes(b"x")
+    """skip対象で既に有効なthumbnailがある場合は、生成を再試行しない。
+
+    (無効/未生成の場合の再試行はbackend/tests/test_scan_thumbnail_retry.py
+    を参照。thumbnail再試行機能の追加により、有効な既存thumbnailがある
+    このケースだけがgenerate_thumbnail未呼び出しのまま維持される。)
+    """
+    video_path = video_folder / "walk1.mp4"
+    video_path.write_bytes(b"x")
     project = _create_project(video_folder)
-    client.post(f"/api/projects/{project['id']}/scan")
+
+    def fake_generate_thumbnail(video_path, out_path):
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"jpeg-bytes")
+        return True
+
+    monkeypatch.setattr(
+        "app.main.media.generate_thumbnail", fake_generate_thumbnail
+    )
+    res1 = client.post(f"/api/projects/{project['id']}/scan")
+    assert res1.json()["thumbnails_generated"] == 1
 
     calls = {"n": 0}
 
